@@ -19,6 +19,11 @@ public class BatchController : BaseApiController
     public async Task<ActionResult<ApiResponse<BatchDto>>> Create([FromBody] CreateBatchDto dto)
         => Success(await _batchService.CreateBatchAsync(dto));
 
+    [HttpPut("{id:int}/plan")]
+    [Authorize(Roles = nameof(UserRole.Lead))]
+    public async Task<ActionResult<ApiResponse<BatchDto>>> Plan(int id, [FromBody] PlanBatchDto dto)
+        => Success(await _batchService.PlanBatchAsync(id, dto, CurrentUserId));
+
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BatchListDto>>>> GetAll()
         => Success(await _batchService.GetAllBatchesAsync());
@@ -31,11 +36,6 @@ public class BatchController : BaseApiController
             return NotFound(ApiResponse<BatchDto>.Fail($"Batch {id} not found"));
         return Success(batch);
     }
-
-    [HttpPut("{id:int}/assign-lead")]
-    [Authorize(Roles = nameof(UserRole.Admin))]
-    public async Task<ActionResult<ApiResponse<BatchDto>>> AssignLead(int id, [FromBody] AssignLeadDto dto)
-        => Success(await _batchService.AssignLeadAsync(id, dto.LeadId));
 
     [HttpPut("{id:int}/workshops/{workshopId:int}/complete")]
     [Authorize(Roles = nameof(UserRole.QCGate) + "," + nameof(UserRole.Lead))]

@@ -9,48 +9,112 @@ namespace HatForge.Tests.Unit;
 
 public class BatchServiceTests
 {
+    private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
+
     [Fact]
-    public async Task CreateBatch_WithValidData_CreatesBatchAndWorkshops()
+    public async Task CreateBatch_WithValidData_CreatesBatch()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto("B-001", 1, 100, new List<int> { 1, 2 }, 1);
+        var dto = new CreateBatchDto(1, 100, Start, End, 1);
         var result = await service.CreateBatchAsync(dto);
 
-        Assert.Equal("B-001", result.BatchNumber);
+        Assert.Matches(@"^BATCH-\d{8}-\d{4}$", result.BatchNumber);
         Assert.Equal(nameof(BatchStatus.Assigned), result.Status);
+        Assert.Empty(result.Workshops); // No workshops yet — Lead must plan
+    }
+
+    [Fact]
+    public async Task CreateBatch_TwoBatchesSameDay_HaveSequentialNumbers()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var first = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        var second = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+
+        Assert.NotEqual(first.BatchNumber, second.BatchNumber);
+        Assert.EndsWith("-0001", first.BatchNumber);
+        Assert.EndsWith("-0002", second.BatchNumber);
+    }
+
+    [Fact]
+    public async Task CreateBatch_EndBeforeStart_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var dto = new CreateBatchDto(1, 100, End, Start, 1); // End < Start
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateBatchAsync(dto));
+    }
+
+    [Fact]
+    public async Task PlanBatch_ByAssignedLead_CreatesWorkshopsAndDeliveries()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            new(1, 0, false, Start, Start.AddDays(10), null),
+            new(2, 1, true, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
+        });
+
+        var result = await service.PlanBatchAsync(batch.Id, plan, leadId: 1);
+
+        Assert.Equal(nameof(BatchStatus.InProduction), result.Status);
         Assert.Equal(2, result.Workshops.Count);
-        Assert.Equal(0, result.Workshops[0].OrderIndex);
+        Assert.False(result.Workshops[0].RequiresMaterials);
+        Assert.True(result.Workshops[1].RequiresMaterials);
     }
 
     [Fact]
-    public async Task CreateBatch_WithDuplicateNumber_Throws()
+    public async Task PlanBatch_ByWrongLead_Throws()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto("B-001", 1, 100, new List<int> { 1 }, 1);
-        await service.CreateBatchAsync(dto);
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            new(1, 0, false, Start, End, null)
+        });
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateBatchAsync(dto));
+        await Assert.ThrowsAsync<ForbiddenException>(
+            () => service.PlanBatchAsync(batch.Id, plan, leadId: 999));
     }
 
     [Fact]
-    public async Task CreateBatch_WithNoWorkshops_Throws()
+    public async Task PlanBatch_RequiresMaterials_WithoutDeliveryDate_Throws()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto("B-002", 1, 100, new List<int>(), 1);
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            new(1, 0, true, Start, End, null) // RequiresMaterials but no delivery date
+        });
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateBatchAsync(dto));
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.PlanBatchAsync(batch.Id, plan, leadId: 1));
     }
 
     [Fact]
@@ -61,23 +125,8 @@ public class BatchServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto("B-003", 1, 100, new List<int> { 1 }, 999);
+        var dto = new CreateBatchDto(1, 100, Start, End, 999);
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.CreateBatchAsync(dto));
-    }
-
-    [Fact]
-    public async Task MarkWorkshopCompleted_AllComplete_CompletesBatch()
-    {
-        using var ctx = TestDataFactory.CreateContext();
-        await TestDataFactory.SeedBaseAsync(ctx);
-        var uow = TestDataFactory.CreateUnitOfWork(ctx);
-        var service = new BatchService(uow, new NoOpNotificationPublisher());
-
-        var created = await service.CreateBatchAsync(new CreateBatchDto("B-004", 1, 50, new List<int> { 1 }, 1));
-        var result = await service.MarkWorkshopCompletedAsync(created.Id, 1);
-
-        Assert.Equal(nameof(BatchStatus.Completed), result.Status);
-        Assert.NotNull(result.CompletedAt);
     }
 }

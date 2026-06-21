@@ -7,27 +7,48 @@ namespace HatForge.Tests.Unit;
 
 public class ValidatorTests
 {
-    [Fact]
-    public void CreateBatch_EmptyNumber_Invalid()
-    {
-        var v = new CreateBatchValidator();
-        var result = v.TestValidate(new CreateBatchDto("", 1, 10, new List<int> { 1 }, 1));
-        result.ShouldHaveValidationErrorFor(x => x.BatchNumber);
-    }
+    private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public void CreateBatch_NoWorkshops_Invalid()
+    public void CreateBatch_EndBeforeStart_Invalid()
     {
         var v = new CreateBatchValidator();
-        var result = v.TestValidate(new CreateBatchDto("B-1", 1, 10, new List<int>(), 1));
-        result.ShouldHaveValidationErrorFor(x => x.WorkshopIds);
+        var result = v.TestValidate(new CreateBatchDto(1, 10, End, Start, 1));
+        result.ShouldHaveValidationErrorFor(x => x.EndDate);
     }
 
     [Fact]
     public void CreateBatch_Valid_Passes()
     {
         var v = new CreateBatchValidator();
-        var result = v.TestValidate(new CreateBatchDto("B-1", 1, 10, new List<int> { 1 }, 1));
+        var result = v.TestValidate(new CreateBatchDto(1, 10, Start, End, 1));
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void PlanBatch_NoWorkshops_Invalid()
+    {
+        var v = new PlanBatchValidator();
+        var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto>()));
+        result.ShouldHaveValidationErrorFor(x => x.Workshops);
+    }
+
+    [Fact]
+    public void PlanBatch_RequiresMaterials_NoDeliveryDate_Invalid()
+    {
+        var v = new PlanBatchValidator();
+        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, null);
+        var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
+    public void PlanBatch_Valid_Passes()
+    {
+        var v = new PlanBatchValidator();
+        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, Start.AddDays(-1));
+        var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
         result.ShouldNotHaveAnyValidationErrors();
     }
 

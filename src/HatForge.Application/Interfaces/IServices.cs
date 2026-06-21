@@ -6,9 +6,9 @@ namespace HatForge.Application.Interfaces;
 public interface IBatchService
 {
     Task<BatchDto> CreateBatchAsync(CreateBatchDto dto);
+    Task<BatchDto> PlanBatchAsync(int batchId, PlanBatchDto dto, int leadId);
     Task<BatchDto?> GetBatchByIdAsync(int id);
     Task<IReadOnlyList<BatchListDto>> GetAllBatchesAsync();
-    Task<BatchDto> AssignLeadAsync(int batchId, int leadId);
     Task<BatchDto> MarkWorkshopCompletedAsync(int batchId, int workshopId);
 }
 
