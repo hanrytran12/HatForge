@@ -30,7 +30,7 @@ public interface ITransferService
 
 public interface IMaterialDeliveryService
 {
-    Task<MaterialDeliveryDto> ScheduleDeliveryAsync(CreateMaterialDeliveryDto dto);
+    Task<IReadOnlyList<MaterialDeliveryDto>> GetPendingByWorkshopAsync(int workshopId);
     Task<MaterialDeliveryDto> ConfirmDeliveryAsync(ConfirmMaterialDeliveryDto dto, int qcId);
 }
 

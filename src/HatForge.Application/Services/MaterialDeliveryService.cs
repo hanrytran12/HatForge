@@ -1,7 +1,6 @@
 using HatForge.Application.DTOs;
 using HatForge.Application.Common;
 using HatForge.Application.Interfaces;
-using HatForge.Domain.Entities;
 using HatForge.Domain.Enums;
 using HatForge.Domain.Interfaces;
 
@@ -10,41 +9,48 @@ namespace HatForge.Application.Services;
 public class MaterialDeliveryService : IMaterialDeliveryService
 {
     private readonly IUnitOfWork _unitOfWork;
+    private readonly INotificationPublisher _notifications;
 
-    public MaterialDeliveryService(IUnitOfWork unitOfWork) => _unitOfWork = unitOfWork;
-
-    public async Task<MaterialDeliveryDto> ScheduleDeliveryAsync(CreateMaterialDeliveryDto dto)
+    public MaterialDeliveryService(IUnitOfWork unitOfWork, INotificationPublisher notifications)
     {
-        _ = await _unitOfWork.Batches.GetByIdAsync(dto.BatchId)
-            ?? throw new NotFoundException("Batch not found");
-        var bw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
-            x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId)
-            ?? throw new NotFoundException("Workshop not in batch");
+        _unitOfWork = unitOfWork;
+        _notifications = notifications;
+    }
 
-        var delivery = new MaterialDelivery
-        {
-            BatchId = dto.BatchId,
-            WorkshopId = dto.WorkshopId,
-            ScheduledDate = dto.ScheduledDate,
-            DeliveredQuantity = dto.DeliveredQuantity,
-            Status = MaterialDeliveryStatus.Scheduled
-        };
+    public async Task<IReadOnlyList<MaterialDeliveryDto>> GetPendingByWorkshopAsync(int workshopId)
+    {
+        var deliveries = await _unitOfWork.MaterialDeliveries.FindAsync(
+            x => x.WorkshopId == workshopId && !x.IsConfirmed,
+            new[] { "Workshop", "Batch" });
 
-        await _unitOfWork.MaterialDeliveries.AddAsync(delivery);
-        await _unitOfWork.SaveChangesAsync();
-
-        return await MapToDto(delivery.Id);
+        return deliveries
+            .OrderBy(x => x.ScheduledDate)
+            .Select(MapToDto)
+            .ToList();
     }
 
     public async Task<MaterialDeliveryDto> ConfirmDeliveryAsync(ConfirmMaterialDeliveryDto dto, int qcId)
     {
         var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
             ?? throw new NotFoundException("QC user not found");
+
         if (qc.Role != UserRole.QCWorkshop)
             throw new ForbiddenException("Only QC Workshop can confirm material receipt");
 
-        var delivery = await _unitOfWork.MaterialDeliveries.GetByIdAsync(dto.DeliveryId)
+        var delivery = await _unitOfWork.MaterialDeliveries.FirstOrDefaultAsync(
+            x => x.Id == dto.DeliveryId,
+            new[] { "Workshop", "Batch" })
             ?? throw new NotFoundException("Delivery not found");
+
+        if (delivery.IsConfirmed)
+            throw new BusinessRuleException("Delivery has already been confirmed");
+
+        // QC must belong to the workshop receiving the materials
+        if (qc.WorkshopId != delivery.WorkshopId)
+            throw new ForbiddenException("You can only confirm deliveries for your own workshop");
+
+        if (dto.DeliveredQuantity <= 0)
+            throw new BusinessRuleException("Delivered quantity must be greater than 0");
 
         delivery.IsConfirmed = true;
         delivery.DeliveredQuantity = dto.DeliveredQuantity;
@@ -54,6 +60,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         delivery.Status = MaterialDeliveryStatus.Received;
         _unitOfWork.MaterialDeliveries.Update(delivery);
 
+        // Mark materials received on BatchWorkshop
         var bw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
             x => x.BatchId == delivery.BatchId && x.WorkshopId == delivery.WorkshopId);
         if (bw != null)
@@ -63,17 +70,23 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         }
 
         await _unitOfWork.SaveChangesAsync();
-        return await MapToDto(delivery.Id);
+
+        await _notifications.NotifyMaterialDeliveryConfirmedAsync(
+            delivery.BatchId, delivery.WorkshopId, new
+            {
+                DeliveryId = delivery.Id,
+                delivery.BatchId,
+                BatchNumber = delivery.Batch?.BatchNumber,
+                delivery.WorkshopId,
+                WorkshopName = delivery.Workshop?.Name,
+                dto.DeliveredQuantity
+            });
+
+        return MapToDto(delivery);
     }
 
-    private async Task<MaterialDeliveryDto> MapToDto(int id)
-    {
-        var d = await _unitOfWork.MaterialDeliveries.FirstOrDefaultAsync(x => x.Id == id,
-            new[] { "Workshop" })
-            ?? throw new NotFoundException("Delivery not found");
-        return new MaterialDeliveryDto(
-            d.Id, d.BatchId, d.WorkshopId, d.Workshop?.Name ?? "",
-            d.ScheduledDate, d.DeliveredDate, d.DeliveredQuantity,
-            d.IsConfirmed, d.Status.ToString());
-    }
+    private static MaterialDeliveryDto MapToDto(Domain.Entities.MaterialDelivery d) => new(
+        d.Id, d.BatchId, d.WorkshopId, d.Workshop?.Name ?? "",
+        d.ScheduledDate, d.DeliveredDate, d.DeliveredQuantity,
+        d.IsConfirmed, d.Status.ToString());
 }

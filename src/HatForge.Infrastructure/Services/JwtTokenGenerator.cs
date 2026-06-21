@@ -31,7 +31,8 @@ public class JwtTokenGenerator : HatForge.Application.Interfaces.IJwtTokenGenera
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Name, user.Name),
-            new Claim(ClaimTypes.Role, user.Role.ToString())
+            new Claim(ClaimTypes.Role, user.Role.ToString()),
+            new Claim("workshopId", user.WorkshopId?.ToString() ?? "")
         };
 
         var token = new JwtSecurityToken(

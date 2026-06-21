@@ -160,6 +160,20 @@ public class BatchService : IBatchService
         _unitOfWork.Batches.Update(batch);
         await _unitOfWork.SaveChangesAsync();
 
+        // Notify QC of each assigned workshop
+        foreach (var item in orderedWorkshops)
+        {
+            await _notifications.NotifyBatchPlannedAsync(item.WorkshopId, new
+            {
+                BatchId = batchId,
+                batch.BatchNumber,
+                WorkshopId = item.WorkshopId,
+                StartDate = item.StartDate,
+                EndDate = item.EndDate,
+                RequiresMaterials = item.RequiresMaterials
+            });
+        }
+
         return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
     }
 
