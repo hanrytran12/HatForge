@@ -26,7 +26,7 @@ public class BatchService : IBatchService
         if (dto.StartDate < DateTime.UtcNow.Date)
             throw new BusinessRuleException("Start date cannot be in the past");
 
-        if (dto.EndDate <= dto.StartDate)
+        if (dto.EndDate.Date <= dto.StartDate.Date)
             throw new BusinessRuleException("End date must be after start date");
 
         var hatModel = await _unitOfWork.HatModels.GetByIdAsync(dto.HatModelId)
@@ -105,23 +105,21 @@ public class BatchService : IBatchService
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — MaterialDeliveryDate must be provided");
 
-            if (item.EndDate <= item.StartDate)
+            if (item.EndDate.Date <= item.StartDate.Date)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: end date must be after start date");
 
-            if (item.StartDate < batch.StartDate || item.EndDate > batch.EndDate)
+            if (item.StartDate.Date < batch.StartDate.Date || item.EndDate.Date > batch.EndDate.Date)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: dates must be within batch range ({batch.StartDate:yyyy-MM-dd} – {batch.EndDate:yyyy-MM-dd})");
 
-            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue
-                && (item.MaterialDeliveryDate.Value < batch.StartDate || item.MaterialDeliveryDate.Value > batch.EndDate))
-                throw new BusinessRuleException(
-                    $"Workshop {item.WorkshopId}: material delivery date must be within batch range ({batch.StartDate:yyyy-MM-dd} – {batch.EndDate:yyyy-MM-dd})");
-
-            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue
-                && item.MaterialDeliveryDate.Value >= item.StartDate)
-                throw new BusinessRuleException(
-                    $"Workshop {item.WorkshopId}: material delivery date must be before workshop start date");
+            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue)
+            {
+                var deliveryDate = item.MaterialDeliveryDate.Value.Date;
+                if (deliveryDate < batch.StartDate.Date || deliveryDate > item.StartDate.Date)
+                    throw new BusinessRuleException(
+                        $"Workshop {item.WorkshopId}: material delivery date must be within [{batch.StartDate:yyyy-MM-dd} – {item.StartDate:yyyy-MM-dd}]");
+            }
         }
 
         var existingBws = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == batchId);
