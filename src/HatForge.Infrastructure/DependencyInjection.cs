@@ -1,6 +1,8 @@
+using HatForge.Application.Interfaces;
 using HatForge.Domain.Interfaces;
 using HatForge.Infrastructure.Data;
 using HatForge.Infrastructure.Repositories;
+using HatForge.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +17,7 @@ public static class DependencyInjection
             options.UseNpgsql(config.GetConnectionString("DefaultConnection")));
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddScoped<INotificationStore, NotificationStore>();
 
         return services;
     }

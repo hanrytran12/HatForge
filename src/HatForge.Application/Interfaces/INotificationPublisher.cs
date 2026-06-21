@@ -8,5 +8,5 @@ public interface INotificationPublisher
     Task NotifyTransferRequestedAsync(object payload);
     Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload);
     Task NotifyBatchCompletedAsync(int batchId, object payload);
-    Task NotifyBatchCreatedAsync(object payload);
+    Task NotifyBatchAssignedToLeadAsync(int leadId, object payload);
 }

@@ -12,6 +12,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<Workshop> Workshops { get; }
     IRepository<HatModel> HatModels { get; }
     IRepository<User> Users { get; }
+    IRepository<Notification> Notifications { get; }
 
     Task<int> SaveChangesAsync();
 }

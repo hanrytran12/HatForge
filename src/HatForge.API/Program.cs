@@ -117,6 +117,7 @@ builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IMaterialDeliveryService, MaterialDeliveryService>();
 builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 builder.Services.AddScoped<INotificationPublisher, SignalRNotificationPublisher>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
 
 // SignalR
 builder.Services.AddSignalR();

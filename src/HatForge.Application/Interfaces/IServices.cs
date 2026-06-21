@@ -9,6 +9,7 @@ public interface IBatchService
     Task<BatchDto> PlanBatchAsync(int batchId, PlanBatchDto dto, int leadId);
     Task<BatchDto?> GetBatchByIdAsync(int id);
     Task<IReadOnlyList<BatchListDto>> GetAllBatchesAsync();
+    Task<IReadOnlyList<BatchListDto>> GetBatchesByLeadAsync(int leadId);
     Task<BatchDto> MarkWorkshopCompletedAsync(int batchId, int workshopId);
 }
 
@@ -37,4 +38,12 @@ public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginDto dto);
     Task<UserDto> RegisterAsync(RegisterDto dto);
+}
+
+public interface INotificationService
+{
+    Task<IReadOnlyList<NotificationDto>> GetMyNotificationsAsync(int userId);
+    Task<int> GetUnreadCountAsync(int userId);
+    Task MarkAsReadAsync(int notificationId, int userId);
+    Task MarkAllAsReadAsync(int userId);
 }

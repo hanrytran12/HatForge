@@ -7,34 +7,70 @@ namespace HatForge.API.Services;
 public class SignalRNotificationPublisher : INotificationPublisher
 {
     private readonly IHubContext<NotificationHub> _hub;
+    private readonly INotificationStore _store;
 
-    public SignalRNotificationPublisher(IHubContext<NotificationHub> hub) => _hub = hub;
+    public SignalRNotificationPublisher(IHubContext<NotificationHub> hub, INotificationStore store)
+    {
+        _hub = hub;
+        _store = store;
+    }
 
-    public Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload) =>
-        _hub.Clients.Group($"workshop_{workshopId}").SendAsync("WorkSubmitted", payload);
+    public async Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload)
+    {
+        await _hub.Clients.Group($"workshop_{workshopId}").SendAsync("WorkSubmitted", payload);
+    }
 
-    public Task NotifyWorkApprovedAsync(int batchId, int staffId, object payload) =>
-        Task.WhenAll(
+    public async Task NotifyWorkApprovedAsync(int batchId, int staffId, object payload)
+    {
+        await Task.WhenAll(
             _hub.Clients.Group($"user_{staffId}").SendAsync("WorkApproved", payload),
             _hub.Clients.Group($"batch_{batchId}").SendAsync("WorkApproved", payload),
             _hub.Clients.Group("leads").SendAsync("WorkApproved", payload));
 
-    public Task NotifyWorkRejectedAsync(int batchId, int staffId, object payload) =>
-        _hub.Clients.Group($"user_{staffId}").SendAsync("WorkRejected", payload);
+        await _store.SaveAsync(staffId, "WorkApproved",
+            "Your work was approved",
+            $"Work for batch #{batchId} has been approved by QC.",
+            payload);
+    }
 
-    public Task NotifyTransferRequestedAsync(object payload) =>
-        _hub.Clients.Group("leads").SendAsync("TransferRequested", payload);
+    public async Task NotifyWorkRejectedAsync(int batchId, int staffId, object payload)
+    {
+        await _hub.Clients.Group($"user_{staffId}").SendAsync("WorkRejected", payload);
 
-    public Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload) =>
-        Task.WhenAll(
+        await _store.SaveAsync(staffId, "WorkRejected",
+            "Your work was rejected",
+            $"Work for batch #{batchId} was rejected. Please review and resubmit.",
+            payload);
+    }
+
+    public async Task NotifyTransferRequestedAsync(object payload)
+    {
+        await _hub.Clients.Group("leads").SendAsync("TransferRequested", payload);
+    }
+
+    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload)
+    {
+        await Task.WhenAll(
             _hub.Clients.Group($"workshop_{toWorkshopId}").SendAsync("TransferApproved", payload),
             _hub.Clients.Group($"batch_{batchId}").SendAsync("TransferApproved", payload));
+    }
 
-    public Task NotifyBatchCompletedAsync(int batchId, object payload) =>
-        Task.WhenAll(
+    public async Task NotifyBatchCompletedAsync(int batchId, object payload)
+    {
+        await Task.WhenAll(
             _hub.Clients.Group($"batch_{batchId}").SendAsync("BatchCompleted", payload),
             _hub.Clients.Group("admins").SendAsync("BatchCompleted", payload));
+    }
 
-    public Task NotifyBatchCreatedAsync(object payload) =>
-        _hub.Clients.Group("admins").SendAsync("BatchCreated", payload);
+    public async Task NotifyBatchAssignedToLeadAsync(int leadId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"user_{leadId}").SendAsync("BatchAssigned", payload),
+            _hub.Clients.Group("admins").SendAsync("BatchCreated", payload));
+
+        await _store.SaveAsync(leadId, "BatchAssigned",
+            "New batch assigned to you",
+            "Admin has assigned a new batch for you to plan.",
+            payload);
+    }
 }

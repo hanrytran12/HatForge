@@ -16,6 +16,7 @@ public class UnitOfWork : IUnitOfWork
     private Repository<Workshop>? _workshops;
     private Repository<HatModel>? _hatModels;
     private Repository<User>? _users;
+    private Repository<Notification>? _notifications;
 
     public UnitOfWork(AppDbContext context) => _context = context;
 
@@ -27,6 +28,7 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<Workshop> Workshops => _workshops ??= new Repository<Workshop>(_context);
     public IRepository<HatModel> HatModels => _hatModels ??= new Repository<HatModel>(_context);
     public IRepository<User> Users => _users ??= new Repository<User>(_context);
+    public IRepository<Notification> Notifications => _notifications ??= new Repository<Notification>(_context);
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
 
