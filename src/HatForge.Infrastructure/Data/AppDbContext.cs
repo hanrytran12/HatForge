@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Work> Works => Set<Work>();
     public DbSet<TransferRequest> TransferRequests => Set<TransferRequest>();
     public DbSet<MaterialDelivery> MaterialDeliveries => Set<MaterialDelivery>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -119,6 +120,18 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.WorkshopId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Notification>(e =>
+        {
+            e.Property(x => x.Type).IsRequired().HasMaxLength(64);
+            e.Property(x => x.Title).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Message).IsRequired().HasMaxLength(1024);
+            e.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.UserId, x.IsRead });
         });
     }
 }

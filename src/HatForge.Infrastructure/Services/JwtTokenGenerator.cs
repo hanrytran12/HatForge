@@ -15,7 +15,8 @@ public class JwtTokenGenerator : HatForge.Application.Interfaces.IJwtTokenGenera
 
     public JwtTokenGenerator(Microsoft.Extensions.Configuration.IConfiguration configuration)
     {
-        _secret = configuration["Jwt:Secret"] ?? "HatForgeSuperSecretKeyThatIsLongEnoughForHS256Algorithm!";
+        _secret = configuration["Jwt:Secret"]
+            ?? throw new InvalidOperationException("Jwt:Secret is not configured.");
         _issuer = configuration["Jwt:Issuer"] ?? "HatForge";
         _audience = configuration["Jwt:Audience"] ?? "HatForge";
     }

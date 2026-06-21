@@ -7,14 +7,37 @@ public class CreateBatchValidator : AbstractValidator<CreateBatchDto>
 {
     public CreateBatchValidator()
     {
-        RuleFor(x => x.BatchNumber)
-            .NotEmpty().WithMessage("Batch number is required")
-            .MaximumLength(64).WithMessage("Batch number must not exceed 64 characters");
-
         RuleFor(x => x.HatModelId).GreaterThan(0).WithMessage("Valid hat model is required");
         RuleFor(x => x.TargetQuantity).GreaterThan(0).WithMessage("Target quantity must be greater than 0");
         RuleFor(x => x.AssignToLeadId).GreaterThan(0).WithMessage("Valid lead must be assigned");
-        RuleFor(x => x.WorkshopIds).NotEmpty().WithMessage("At least one workshop must be selected");
+        RuleFor(x => x.StartDate).NotEmpty().WithMessage("Start date is required");
+        RuleFor(x => x.EndDate)
+            .NotEmpty()
+            .GreaterThan(x => x.StartDate).WithMessage("End date must be after start date");
+    }
+}
+
+public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
+{
+    public PlanBatchValidator()
+    {
+        RuleFor(x => x.Workshops)
+            .NotEmpty().WithMessage("At least one workshop must be in the plan");
+
+        RuleForEach(x => x.Workshops).ChildRules(w =>
+        {
+            w.RuleFor(x => x.WorkshopId).GreaterThan(0).WithMessage("Valid workshop is required");
+            w.RuleFor(x => x.OrderIndex).GreaterThanOrEqualTo(0);
+            w.RuleFor(x => x.StartDate).NotEmpty();
+            w.RuleFor(x => x.EndDate)
+                .NotEmpty()
+                .GreaterThan(x => x.StartDate).WithMessage("Workshop end date must be after start date");
+            w.When(x => x.RequiresMaterials, () =>
+            {
+                w.RuleFor(x => x.MaterialDeliveryDate)
+                    .NotNull().WithMessage("MaterialDeliveryDate is required when workshop requires materials");
+            });
+        });
     }
 }
 
