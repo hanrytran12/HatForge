@@ -21,7 +21,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
     {
         var deliveries = await _unitOfWork.MaterialDeliveries.FindAsync(
             x => x.WorkshopId == workshopId && !x.IsConfirmed,
-            new[] { "Workshop", "Batch" });
+            new[] { "Workshop", "Batch", "Items" });
 
         return deliveries
             .OrderBy(x => x.ScheduledDate)
@@ -39,21 +39,32 @@ public class MaterialDeliveryService : IMaterialDeliveryService
 
         var delivery = await _unitOfWork.MaterialDeliveries.FirstOrDefaultAsync(
             x => x.Id == dto.DeliveryId,
-            new[] { "Workshop", "Batch" })
+            new[] { "Workshop", "Batch", "Items" })
             ?? throw new NotFoundException("Delivery not found");
 
         if (delivery.IsConfirmed)
             throw new BusinessRuleException("Delivery has already been confirmed");
 
-        // QC must belong to the workshop receiving the materials
         if (qc.WorkshopId != delivery.WorkshopId)
             throw new ForbiddenException("You can only confirm deliveries for your own workshop");
 
-        if (dto.DeliveredQuantity <= 0)
-            throw new BusinessRuleException("Delivered quantity must be greater than 0");
+        if (dto.Items == null || dto.Items.Count == 0)
+            throw new BusinessRuleException("At least one item must be confirmed");
+
+        // Update actual quantities per item
+        foreach (var confirmItem in dto.Items)
+        {
+            if (confirmItem.ActualQuantity <= 0)
+                throw new BusinessRuleException($"Actual quantity for item {confirmItem.ItemId} must be greater than 0");
+
+            var item = delivery.Items.FirstOrDefault(x => x.Id == confirmItem.ItemId)
+                ?? throw new NotFoundException($"Material item {confirmItem.ItemId} not found in this delivery");
+
+            item.ActualQuantity = confirmItem.ActualQuantity;
+            _unitOfWork.MaterialDeliveryItems.Update(item);
+        }
 
         delivery.IsConfirmed = true;
-        delivery.DeliveredQuantity = dto.DeliveredQuantity;
         delivery.ConfirmedByQCId = qcId;
         delivery.ConfirmedAt = DateTime.UtcNow;
         delivery.DeliveredDate = DateTime.UtcNow;
@@ -78,8 +89,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
                 delivery.BatchId,
                 BatchNumber = delivery.Batch?.BatchNumber,
                 delivery.WorkshopId,
-                WorkshopName = delivery.Workshop?.Name,
-                dto.DeliveredQuantity
+                WorkshopName = delivery.Workshop?.Name
             });
 
         return MapToDto(delivery);
@@ -87,6 +97,8 @@ public class MaterialDeliveryService : IMaterialDeliveryService
 
     private static MaterialDeliveryDto MapToDto(Domain.Entities.MaterialDelivery d) => new(
         d.Id, d.BatchId, d.WorkshopId, d.Workshop?.Name ?? "",
-        d.ScheduledDate, d.DeliveredDate, d.DeliveredQuantity,
-        d.IsConfirmed, d.Status.ToString());
+        d.ScheduledDate, d.DeliveredDate,
+        d.IsConfirmed, d.Status.ToString(),
+        d.Items.Select(i => new MaterialDeliveryItemDto(
+            i.Id, i.MaterialName, i.PlannedQuantity, i.ActualQuantity)).ToList());
 }

@@ -105,6 +105,9 @@ public class BatchService : IBatchService
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — MaterialDeliveryDate must be provided");
 
+            if (item.RequiresMaterials && (item.MaterialItems == null || item.MaterialItems.Count == 0))
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId} requires materials — at least one material item must be provided");
             if (item.EndDate.Date <= item.StartDate.Date)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: end date must be after start date");
@@ -153,6 +156,17 @@ public class BatchService : IBatchService
                     Status = MaterialDeliveryStatus.Scheduled
                 };
                 await _unitOfWork.MaterialDeliveries.AddAsync(delivery);
+                await _unitOfWork.SaveChangesAsync(); // get delivery.Id
+
+                foreach (var mat in item.MaterialItems!)
+                {
+                    await _unitOfWork.MaterialDeliveryItems.AddAsync(new MaterialDeliveryItem
+                    {
+                        MaterialDeliveryId = delivery.Id,
+                        MaterialName = mat.MaterialName,
+                        PlannedQuantity = mat.PlannedQuantity
+                    });
+                }
             }
         }
 

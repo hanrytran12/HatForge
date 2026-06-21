@@ -43,7 +43,13 @@ public record WorkshopPlanItemDto(
     bool RequiresMaterials,
     DateTime StartDate,
     DateTime EndDate,
-    DateTime? MaterialDeliveryDate  // required when RequiresMaterials = true
+    DateTime? MaterialDeliveryDate,          // required when RequiresMaterials = true
+    List<MaterialItemDto>? MaterialItems     // required when RequiresMaterials = true
+);
+
+public record MaterialItemDto(
+    string MaterialName,
+    int PlannedQuantity
 );
 
 public record BatchListDto(

@@ -38,7 +38,7 @@ public class ValidatorTests
     public void PlanBatch_RequiresMaterials_NoDeliveryDate_Invalid()
     {
         var v = new PlanBatchValidator();
-        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, null);
+        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, null, null);
         var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
         Assert.False(result.IsValid);
     }
@@ -47,7 +47,8 @@ public class ValidatorTests
     public void PlanBatch_Valid_Passes()
     {
         var v = new PlanBatchValidator();
-        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, Start.AddDays(-1));
+        var item = new WorkshopPlanItemDto(1, 0, true, Start, End, Start.AddDays(-1),
+            new List<MaterialItemDto> { new("Wool Felt", 500) });
         var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
         result.ShouldNotHaveAnyValidationErrors();
     }

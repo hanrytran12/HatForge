@@ -12,6 +12,18 @@ public class BatchServiceTests
     private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
 
+    // Helper: workshop item without materials
+    private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
+        => new(workshopId, order, false, start, end, null, null, null);
+
+    // Helper: workshop item with materials
+    private static WorkshopPlanItemDto WithMaterial(int workshopId, int order, DateTime start, DateTime end, DateTime deliveryDate)
+        => new(workshopId, order, true, start, end, deliveryDate, new List<MaterialItemDto>
+        {
+            new("Wool Felt", 500),
+            new("Thread", 100)
+        });
+
     [Fact]
     public async Task CreateBatch_WithValidData_CreatesBatch()
     {
@@ -20,12 +32,11 @@ public class BatchServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto(1, 100, Start, End, 1);
-        var result = await service.CreateBatchAsync(dto);
+        var result = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
 
         Assert.Matches(@"^BATCH-\d{8}-\d{4}$", result.BatchNumber);
         Assert.Equal(nameof(BatchStatus.Assigned), result.Status);
-        Assert.Empty(result.Workshops); // No workshops yet — Lead must plan
+        Assert.Empty(result.Workshops);
     }
 
     [Fact]
@@ -52,9 +63,8 @@ public class BatchServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto(1, 100, End, Start, 1); // End < Start
-
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CreateBatchAsync(dto));
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.CreateBatchAsync(new CreateBatchDto(1, 100, End, Start, 1)));
     }
 
     [Fact]
@@ -69,8 +79,8 @@ public class BatchServiceTests
 
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
-            new(1, 0, false, Start, Start.AddDays(10), null),
-            new(2, 1, true, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
+            NoMaterial(1, 0, Start, Start.AddDays(10)),
+            WithMaterial(2, 1, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
         });
 
         var result = await service.PlanBatchAsync(batch.Id, plan, leadId: 1);
@@ -92,7 +102,7 @@ public class BatchServiceTests
         var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
-            new(1, 0, false, Start, End, null)
+            NoMaterial(1, 0, Start, End)
         });
 
         await Assert.ThrowsAsync<ForbiddenException>(
@@ -110,7 +120,7 @@ public class BatchServiceTests
         var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
-            new(1, 0, true, Start, End, null) // RequiresMaterials but no delivery date
+            new(1, 0, true, Start, End, null, null) // RequiresMaterials but missing all material info
         });
 
         await Assert.ThrowsAsync<BusinessRuleException>(
@@ -125,8 +135,7 @@ public class BatchServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
-        var dto = new CreateBatchDto(1, 100, Start, End, 999);
-
-        await Assert.ThrowsAsync<NotFoundException>(() => service.CreateBatchAsync(dto));
+        await Assert.ThrowsAsync<NotFoundException>(
+            () => service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 999)));
     }
 }

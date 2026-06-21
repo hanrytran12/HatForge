@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Work> Works => Set<Work>();
     public DbSet<TransferRequest> TransferRequests => Set<TransferRequest>();
     public DbSet<MaterialDelivery> MaterialDeliveries => Set<MaterialDelivery>();
+    public DbSet<MaterialDeliveryItem> MaterialDeliveryItems => Set<MaterialDeliveryItem>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -120,6 +121,15 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.WorkshopId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<MaterialDeliveryItem>(e =>
+        {
+            e.Property(x => x.MaterialName).IsRequired().HasMaxLength(256);
+            e.HasOne(x => x.MaterialDelivery)
+                .WithMany(x => x.Items)
+                .HasForeignKey(x => x.MaterialDeliveryId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<Notification>(e =>
