@@ -1,0 +1,29 @@
+# Build output
+bin/
+obj/
+
+# Visual Studio
+*.user
+*.suo
+.vs/
+*.rsuser
+
+# Rider
+.idea/
+*.sln.iml
+
+# Local secrets — không commit file này, tự tạo từ appsettings.json
+appsettings.Development.json
+
+# Uploads
+wwwroot/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# NuGet
+*.nupkg
+
+# Internal planning docs
+BATCHFLOW_PROJECT_PLAN.md

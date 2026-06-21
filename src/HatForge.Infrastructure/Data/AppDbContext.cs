@@ -1,0 +1,124 @@
+using HatForge.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace HatForge.Infrastructure.Data;
+
+public class AppDbContext : DbContext
+{
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<Workshop> Workshops => Set<Workshop>();
+    public DbSet<HatModel> HatModels => Set<HatModel>();
+    public DbSet<Batch> Batches => Set<Batch>();
+    public DbSet<BatchWorkshop> BatchWorkshops => Set<BatchWorkshop>();
+    public DbSet<Work> Works => Set<Work>();
+    public DbSet<TransferRequest> TransferRequests => Set<TransferRequest>();
+    public DbSet<MaterialDelivery> MaterialDeliveries => Set<MaterialDelivery>();
+
+    protected override void OnModelCreating(ModelBuilder b)
+    {
+        b.Entity<User>(e =>
+        {
+            e.HasIndex(u => u.Email).IsUnique();
+            e.Property(u => u.Email).IsRequired().HasMaxLength(256);
+            e.Property(u => u.Name).IsRequired().HasMaxLength(128);
+            e.Property(u => u.PasswordHash).IsRequired();
+            e.HasOne(u => u.Workshop)
+                .WithMany(w => w.Users)
+                .HasForeignKey(u => u.WorkshopId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<Workshop>(e =>
+        {
+            e.Property(w => w.Name).IsRequired().HasMaxLength(128);
+        });
+
+        b.Entity<HatModel>(e =>
+        {
+            e.Property(h => h.Name).IsRequired().HasMaxLength(128);
+        });
+
+        b.Entity<Batch>(e =>
+        {
+            e.HasIndex(x => x.BatchNumber).IsUnique();
+            e.Property(x => x.BatchNumber).IsRequired().HasMaxLength(64);
+            e.HasOne(x => x.HatModel)
+                .WithMany(h => h.Batches)
+                .HasForeignKey(x => x.HatModelId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.AssignedToLead)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedToLeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<BatchWorkshop>(e =>
+        {
+            e.HasIndex(x => new { x.BatchId, x.WorkshopId }).IsUnique();
+            e.HasOne(x => x.Batch)
+                .WithMany(x => x.BatchWorkshops)
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Workshop)
+                .WithMany(w => w.BatchWorkshops)
+                .HasForeignKey(x => x.WorkshopId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<Work>(e =>
+        {
+            e.Property(x => x.PhotoUrl).HasMaxLength(512);
+            e.Property(x => x.RejectionNotes).HasMaxLength(500);
+            e.HasOne(x => x.Batch)
+                .WithMany(x => x.Works)
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Workshop)
+                .WithMany()
+                .HasForeignKey(x => x.WorkshopId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Staff)
+                .WithMany()
+                .HasForeignKey(x => x.StaffId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ReviewedByQC)
+                .WithMany()
+                .HasForeignKey(x => x.ReviewedByQCId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<TransferRequest>(e =>
+        {
+            e.HasOne(x => x.Batch)
+                .WithMany(x => x.TransferRequests)
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.FromWorkshop)
+                .WithMany()
+                .HasForeignKey(x => x.FromWorkshopId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ToWorkshop)
+                .WithMany()
+                .HasForeignKey(x => x.ToWorkshopId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ApprovedByLead)
+                .WithMany()
+                .HasForeignKey(x => x.ApprovedByLeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<MaterialDelivery>(e =>
+        {
+            e.HasOne(x => x.Batch)
+                .WithMany()
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Workshop)
+                .WithMany()
+                .HasForeignKey(x => x.WorkshopId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+}

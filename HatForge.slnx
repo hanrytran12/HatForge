@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HatForge.API/HatForge.API.csproj" />
+    <Project Path="src/HatForge.Application/HatForge.Application.csproj" />
+    <Project Path="src/HatForge.Domain/HatForge.Domain.csproj" />
+    <Project Path="src/HatForge.Infrastructure/HatForge.Infrastructure.csproj" />
+    <Project Path="src/HatForge.Tests/HatForge.Tests.csproj" />
+  </Folder>
+</Solution>
