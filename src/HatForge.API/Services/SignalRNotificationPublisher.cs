@@ -1,5 +1,8 @@
+using System.Text.Json;
 using HatForge.API.Hubs;
 using HatForge.Application.Interfaces;
+using HatForge.Domain.Entities;
+using HatForge.Domain.Interfaces;
 using Microsoft.AspNetCore.SignalR;
 
 namespace HatForge.API.Services;
@@ -7,12 +10,17 @@ namespace HatForge.API.Services;
 public class SignalRNotificationPublisher : INotificationPublisher
 {
     private readonly IHubContext<NotificationHub> _hub;
-    private readonly INotificationStore _store;
+    private readonly IUnitOfWork _unitOfWork;
 
-    public SignalRNotificationPublisher(IHubContext<NotificationHub> hub, INotificationStore store)
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    public SignalRNotificationPublisher(IHubContext<NotificationHub> hub, IUnitOfWork unitOfWork)
     {
         _hub = hub;
-        _store = store;
+        _unitOfWork = unitOfWork;
     }
 
     public async Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload)
@@ -27,7 +35,7 @@ public class SignalRNotificationPublisher : INotificationPublisher
             _hub.Clients.Group($"batch_{batchId}").SendAsync("WorkApproved", payload),
             _hub.Clients.Group("leads").SendAsync("WorkApproved", payload));
 
-        await _store.SaveAsync(staffId, "WorkApproved",
+        await SaveAsync(staffId, "WorkApproved",
             "Your work was approved",
             $"Work for batch #{batchId} has been approved by QC.",
             payload);
@@ -37,7 +45,7 @@ public class SignalRNotificationPublisher : INotificationPublisher
     {
         await _hub.Clients.Group($"user_{staffId}").SendAsync("WorkRejected", payload);
 
-        await _store.SaveAsync(staffId, "WorkRejected",
+        await SaveAsync(staffId, "WorkRejected",
             "Your work was rejected",
             $"Work for batch #{batchId} was rejected. Please review and resubmit.",
             payload);
@@ -68,9 +76,24 @@ public class SignalRNotificationPublisher : INotificationPublisher
             _hub.Clients.Group($"user_{leadId}").SendAsync("BatchAssigned", payload),
             _hub.Clients.Group("admins").SendAsync("BatchCreated", payload));
 
-        await _store.SaveAsync(leadId, "BatchAssigned",
+        await SaveAsync(leadId, "BatchAssigned",
             "New batch assigned to you",
             "Admin has assigned a new batch for you to plan.",
             payload);
+    }
+
+    private async Task SaveAsync(int userId, string type, string title, string message, object payload)
+    {
+        var notification = new Notification
+        {
+            UserId = userId,
+            Type = type,
+            Title = title,
+            Message = message,
+            Payload = JsonSerializer.Serialize(payload, JsonOptions)
+        };
+
+        await _unitOfWork.Notifications.AddAsync(notification);
+        await _unitOfWork.SaveChangesAsync();
     }
 }
