@@ -1,3 +1,4 @@
+using HatForge.Application.Common;
 using HatForge.Application.DTOs;
 using HatForge.Application.Interfaces;
 using HatForge.Domain.Enums;
@@ -15,16 +16,16 @@ public class TransferController : BaseApiController
 
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.Lead))]
-    public async Task<ActionResult<TransferRequestDto>> Create([FromBody] CreateTransferDto dto)
-        => Ok(await _transferService.CreateTransferRequestAsync(dto));
+    public async Task<ActionResult<ApiResponse<TransferRequestDto>>> Create([FromBody] CreateTransferDto dto)
+        => Success(await _transferService.CreateTransferRequestAsync(dto));
 
     [HttpPut("approve")]
     [Authorize(Roles = nameof(UserRole.Lead))]
-    public async Task<ActionResult<TransferRequestDto>> Approve([FromBody] ApproveTransferDto dto)
-        => Ok(await _transferService.ApproveTransferAsync(dto, CurrentUserId));
+    public async Task<ActionResult<ApiResponse<TransferRequestDto>>> Approve([FromBody] ApproveTransferDto dto)
+        => Success(await _transferService.ApproveTransferAsync(dto, CurrentUserId));
 
     [HttpGet("pending")]
     [Authorize(Roles = nameof(UserRole.Lead))]
-    public async Task<ActionResult<IReadOnlyList<TransferRequestDto>>> GetPending()
-        => Ok(await _transferService.GetPendingTransfersAsync());
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<TransferRequestDto>>>> GetPending()
+        => Success(await _transferService.GetPendingTransfersAsync());
 }

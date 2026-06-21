@@ -1,3 +1,4 @@
+using HatForge.Application.Common;
 using HatForge.Application.DTOs;
 using HatForge.Application.Interfaces;
 using HatForge.Domain.Enums;
@@ -15,20 +16,20 @@ public class WorkController : BaseApiController
 
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.Staff))]
-    public async Task<ActionResult<WorkDto>> Submit([FromBody] SubmitWorkDto dto)
-        => Ok(await _workService.SubmitWorkAsync(dto, CurrentUserId));
+    public async Task<ActionResult<ApiResponse<WorkDto>>> Submit([FromBody] SubmitWorkDto dto)
+        => Success(await _workService.SubmitWorkAsync(dto, CurrentUserId));
 
     [HttpPut("approve")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
-    public async Task<ActionResult<WorkDto>> Approve([FromBody] ApproveWorkDto dto)
-        => Ok(await _workService.ApproveWorkAsync(dto.WorkId, CurrentUserId));
+    public async Task<ActionResult<ApiResponse<WorkDto>>> Approve([FromBody] ApproveWorkDto dto)
+        => Success(await _workService.ApproveWorkAsync(dto.WorkId, CurrentUserId));
 
     [HttpPut("reject")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
-    public async Task<ActionResult<WorkDto>> Reject([FromBody] RejectWorkDto dto)
-        => Ok(await _workService.RejectWorkAsync(dto, CurrentUserId));
+    public async Task<ActionResult<ApiResponse<WorkDto>>> Reject([FromBody] RejectWorkDto dto)
+        => Success(await _workService.RejectWorkAsync(dto, CurrentUserId));
 
     [HttpGet("batch/{batchId:int}")]
-    public async Task<ActionResult<IReadOnlyList<WorkDto>>> GetByBatch(int batchId)
-        => Ok(await _workService.GetWorksByBatchAsync(batchId));
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<WorkDto>>>> GetByBatch(int batchId)
+        => Success(await _workService.GetWorksByBatchAsync(batchId));
 }

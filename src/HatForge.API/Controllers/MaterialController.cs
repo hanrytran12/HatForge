@@ -1,3 +1,4 @@
+using HatForge.Application.Common;
 using HatForge.Application.DTOs;
 using HatForge.Application.Interfaces;
 using HatForge.Domain.Enums;
@@ -15,11 +16,11 @@ public class MaterialController : BaseApiController
 
     [HttpPost("schedule")]
     [Authorize(Roles = nameof(UserRole.Lead))]
-    public async Task<ActionResult<MaterialDeliveryDto>> Schedule([FromBody] CreateMaterialDeliveryDto dto)
-        => Ok(await _materialService.ScheduleDeliveryAsync(dto));
+    public async Task<ActionResult<ApiResponse<MaterialDeliveryDto>>> Schedule([FromBody] CreateMaterialDeliveryDto dto)
+        => Success(await _materialService.ScheduleDeliveryAsync(dto));
 
     [HttpPut("confirm")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
-    public async Task<ActionResult<MaterialDeliveryDto>> Confirm([FromBody] ConfirmMaterialDeliveryDto dto)
-        => Ok(await _materialService.ConfirmDeliveryAsync(dto, CurrentUserId));
+    public async Task<ActionResult<ApiResponse<MaterialDeliveryDto>>> Confirm([FromBody] ConfirmMaterialDeliveryDto dto)
+        => Success(await _materialService.ConfirmDeliveryAsync(dto, CurrentUserId));
 }

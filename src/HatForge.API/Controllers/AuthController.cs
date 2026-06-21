@@ -1,3 +1,4 @@
+using HatForge.Application.Common;
 using HatForge.Application.DTOs;
 using HatForge.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -15,11 +16,11 @@ public class AuthController : ControllerBase
 
     [HttpPost("login")]
     [AllowAnonymous]
-    public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginDto dto)
-        => Ok(await _authService.LoginAsync(dto));
+    public async Task<ActionResult<ApiResponse<AuthResponseDto>>> Login([FromBody] LoginDto dto)
+        => Ok(ApiResponse<AuthResponseDto>.Ok(await _authService.LoginAsync(dto)));
 
     [HttpPost("register")]
     [AllowAnonymous]
-    public async Task<ActionResult<UserDto>> Register([FromBody] RegisterDto dto)
-        => Ok(await _authService.RegisterAsync(dto));
+    public async Task<ActionResult<ApiResponse<UserDto>>> Register([FromBody] RegisterDto dto)
+        => Ok(ApiResponse<UserDto>.Ok(await _authService.RegisterAsync(dto)));
 }

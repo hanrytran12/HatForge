@@ -1,3 +1,4 @@
+using HatForge.Application.Common;
 using HatForge.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -14,13 +15,13 @@ public class UploadController : ControllerBase
     public UploadController(IFileStorageService fileStorage) => _fileStorage = fileStorage;
 
     [HttpPost("photo")]
-    public async Task<ActionResult<string>> UploadPhoto(IFormFile file)
+    public async Task<ActionResult<ApiResponse<object>>> UploadPhoto(IFormFile file)
     {
         if (file == null || file.Length == 0)
-            return BadRequest("No file provided");
+            return BadRequest(ApiResponse<object>.Fail("No file provided"));
 
         await using var stream = file.OpenReadStream();
         var url = await _fileStorage.SaveAsync(stream, file.FileName, file.ContentType);
-        return Ok(new { url });
+        return Ok(ApiResponse<object>.Ok(new { url }));
     }
 }

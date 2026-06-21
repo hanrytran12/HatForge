@@ -1,19 +1,40 @@
+using FluentValidation;
 using HatForge.API;
+using HatForge.API.Filters;
 using HatForge.API.Hubs;
 using HatForge.API.Middleware;
 using HatForge.API.Services;
 using HatForge.Application.Interfaces;
 using HatForge.Application.Services;
+using HatForge.Application.Validators;
 using HatForge.Infrastructure;
 using HatForge.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+{
+    options.Filters.Add<ValidationFilter>();
+})
+.AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.SuppressModelStateInvalidFilter = true;
+});
+
+// FluentValidation — register all validators, ValidationFilter handles the pipeline
+builder.Services.AddValidatorsFromAssemblyContaining<LoginValidator>();
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

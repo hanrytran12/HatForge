@@ -7,7 +7,18 @@ public class NotFoundException : Exception
 
 public class ValidationException : Exception
 {
-    public ValidationException(string message) : base(message) { }
+    public IReadOnlyDictionary<string, string[]> Errors { get; }
+
+    public ValidationException(string message) : base(message)
+    {
+        Errors = new Dictionary<string, string[]>();
+    }
+
+    public ValidationException(IReadOnlyDictionary<string, string[]> errors)
+        : base("One or more validation errors occurred.")
+    {
+        Errors = errors;
+    }
 }
 
 public class BusinessRuleException : Exception
@@ -18,4 +29,9 @@ public class BusinessRuleException : Exception
 public class ForbiddenException : Exception
 {
     public ForbiddenException(string message) : base(message) { }
+}
+
+public class UnauthorizedException : Exception
+{
+    public UnauthorizedException(string message) : base(message) { }
 }

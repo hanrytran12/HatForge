@@ -9,6 +9,11 @@ public class ErrorHandlingMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<ErrorHandlingMiddleware> _logger;
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
     public ErrorHandlingMiddleware(RequestDelegate next, ILogger<ErrorHandlingMiddleware> logger)
     {
         _next = next;
@@ -32,18 +37,50 @@ public class ErrorHandlingMiddleware
     {
         context.Response.ContentType = "application/json";
 
-        var (statusCode, message) = exception switch
-        {
-            NotFoundException => (HttpStatusCode.NotFound, exception.Message),
-            BusinessRuleException => (HttpStatusCode.BadRequest, exception.Message),
-            ValidationException => (HttpStatusCode.BadRequest, exception.Message),
-            ForbiddenException => (HttpStatusCode.Forbidden, exception.Message),
-            UnauthorizedAccessException => (HttpStatusCode.Unauthorized, exception.Message),
-            _ => (HttpStatusCode.InternalServerError, "An unexpected error occurred")
-        };
+        string response;
 
-        context.Response.StatusCode = (int)statusCode;
-        var response = JsonSerializer.Serialize(new { error = message });
+        switch (exception)
+        {
+            case ValidationException validationEx when validationEx.Errors.Count > 0:
+                context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.FailValidation(exception.Message, validationEx.Errors),
+                    JsonOptions);
+                break;
+
+            case NotFoundException:
+                context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.Fail(exception.Message), JsonOptions);
+                break;
+
+            case ValidationException:
+            case BusinessRuleException:
+                context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.Fail(exception.Message), JsonOptions);
+                break;
+
+            case UnauthorizedException:
+            case UnauthorizedAccessException:
+                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.Fail(exception.Message), JsonOptions);
+                break;
+
+            case ForbiddenException:
+                context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.Fail(exception.Message), JsonOptions);
+                break;
+
+            default:
+                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                response = JsonSerializer.Serialize(
+                    ApiResponse<object>.Fail("An unexpected error occurred"), JsonOptions);
+                break;
+        }
+
         await context.Response.WriteAsync(response);
     }
 }

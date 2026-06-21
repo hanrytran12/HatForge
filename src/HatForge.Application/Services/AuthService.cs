@@ -22,10 +22,10 @@ public class AuthService : IAuthService
     public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
     {
         var user = await _unitOfWork.Users.FirstOrDefaultAsync(x => x.Email == dto.Email)
-            ?? throw new ForbiddenException("Invalid credentials");
+            ?? throw new UnauthorizedException("Invalid credentials");
 
         if (!_passwordHasher.Verify(dto.Password, user.PasswordHash))
-            throw new ForbiddenException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
 
         var token = _tokenGenerator.GenerateToken(user);
         return new AuthResponseDto(token, user.Id, user.Name, user.Email, user.Role.ToString(), user.WorkshopId);
