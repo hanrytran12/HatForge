@@ -14,10 +14,16 @@ public class MaterialController : BaseApiController
 
     public MaterialController(IMaterialDeliveryService materialService) => _materialService = materialService;
 
-    [HttpPost("schedule")]
-    [Authorize(Roles = nameof(UserRole.Lead))]
-    public async Task<ActionResult<ApiResponse<MaterialDeliveryDto>>> Schedule([FromBody] CreateMaterialDeliveryDto dto)
-        => Success(await _materialService.ScheduleDeliveryAsync(dto));
+    [HttpGet("pending")]
+    [Authorize(Roles = nameof(UserRole.QCWorkshop))]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<MaterialDeliveryDto>>>> GetPending()
+    {
+        var workshopId = CurrentWorkshopId;
+        if (workshopId == null)
+            return BadRequest(ApiResponse<IReadOnlyList<MaterialDeliveryDto>>.Fail("You are not assigned to any workshop"));
+
+        return Success(await _materialService.GetPendingByWorkshopAsync(workshopId.Value));
+    }
 
     [HttpPut("confirm")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]

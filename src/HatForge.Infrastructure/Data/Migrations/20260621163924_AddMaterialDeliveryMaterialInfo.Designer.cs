@@ -3,6 +3,7 @@ using System;
 using HatForge.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HatForge.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260621163924_AddMaterialDeliveryMaterialInfo")]
+    partial class AddMaterialDeliveryMaterialInfo
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -157,8 +160,19 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<DateTime?>("DeliveredDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("DeliveredQuantity")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsConfirmed")
                         .HasColumnType("boolean");
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("PlannedQuantity")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("ScheduledDate")
                         .HasColumnType("timestamp with time zone");
@@ -176,35 +190,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.HasIndex("WorkshopId");
 
                     b.ToTable("MaterialDeliveries");
-                });
-
-            modelBuilder.Entity("HatForge.Domain.Entities.MaterialDeliveryItem", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<int>("ActualQuantity")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("MaterialDeliveryId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("MaterialName")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
-                    b.Property<int>("PlannedQuantity")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("MaterialDeliveryId");
-
-                    b.ToTable("MaterialDeliveryItems");
                 });
 
             modelBuilder.Entity("HatForge.Domain.Entities.Notification", b =>
@@ -463,17 +448,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("Workshop");
                 });
 
-            modelBuilder.Entity("HatForge.Domain.Entities.MaterialDeliveryItem", b =>
-                {
-                    b.HasOne("HatForge.Domain.Entities.MaterialDelivery", "MaterialDelivery")
-                        .WithMany("Items")
-                        .HasForeignKey("MaterialDeliveryId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("MaterialDelivery");
-                });
-
             modelBuilder.Entity("HatForge.Domain.Entities.Notification", b =>
                 {
                     b.HasOne("HatForge.Domain.Entities.User", "User")
@@ -575,11 +549,6 @@ namespace HatForge.Infrastructure.Data.Migrations
             modelBuilder.Entity("HatForge.Domain.Entities.HatModel", b =>
                 {
                     b.Navigation("Batches");
-                });
-
-            modelBuilder.Entity("HatForge.Domain.Entities.MaterialDelivery", b =>
-                {
-                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("HatForge.Domain.Entities.Workshop", b =>

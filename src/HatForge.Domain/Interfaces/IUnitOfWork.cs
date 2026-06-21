@@ -8,6 +8,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<Work> Works { get; }
     IRepository<TransferRequest> TransferRequests { get; }
     IRepository<MaterialDelivery> MaterialDeliveries { get; }
+    IRepository<MaterialDeliveryItem> MaterialDeliveryItems { get; }
     IRepository<BatchWorkshop> BatchWorkshops { get; }
     IRepository<Workshop> Workshops { get; }
     IRepository<HatModel> HatModels { get; }

@@ -25,11 +25,24 @@ public record MaterialDeliveryDto(
     string WorkshopName,
     DateTime ScheduledDate,
     DateTime? DeliveredDate,
-    int DeliveredQuantity,
     bool IsConfirmed,
-    string Status
+    string Status,
+    List<MaterialDeliveryItemDto> Items
 );
 
-public record CreateMaterialDeliveryDto(int BatchId, int WorkshopId, DateTime ScheduledDate, int DeliveredQuantity);
+public record MaterialDeliveryItemDto(
+    int Id,
+    string MaterialName,
+    int PlannedQuantity,
+    int ActualQuantity
+);
 
-public record ConfirmMaterialDeliveryDto(int DeliveryId, int DeliveredQuantity);
+public record ConfirmMaterialDeliveryDto(
+    int DeliveryId,
+    List<ConfirmMaterialItemDto> Items  // actual quantities per material
+);
+
+public record ConfirmMaterialItemDto(
+    int ItemId,
+    int ActualQuantity
+);

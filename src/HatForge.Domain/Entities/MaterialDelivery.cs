@@ -9,7 +9,6 @@ public class MaterialDelivery
     public int WorkshopId { get; set; }
     public DateTime ScheduledDate { get; set; }
     public DateTime? DeliveredDate { get; set; }
-    public int DeliveredQuantity { get; set; }
     public bool IsConfirmed { get; set; }
     public int? ConfirmedByQCId { get; set; }
     public DateTime? ConfirmedAt { get; set; }
@@ -17,4 +16,5 @@ public class MaterialDelivery
 
     public Batch Batch { get; set; } = null!;
     public Workshop Workshop { get; set; } = null!;
+    public ICollection<MaterialDeliveryItem> Items { get; set; } = new List<MaterialDeliveryItem>();
 }

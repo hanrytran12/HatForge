@@ -11,6 +11,9 @@ public class BatchWorkflowTests
     private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
     private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
 
+    private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
+        => new(workshopId, order, false, start, end, null, null, null);
+
     [Fact]
     public async Task FullWorkflow_CreatePlanSubmitApproveTransferComplete()
     {
@@ -29,11 +32,11 @@ public class BatchWorkflowTests
         Assert.Equal(nameof(BatchStatus.Assigned), batch.Status);
         Assert.Empty(batch.Workshops);
 
-        // 2. Lead plans workshop chain
+        // 2. Lead plans workshop chain (no materials needed)
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
-            new(1, 0, false, Start, Start.AddDays(10), null),
-            new(2, 1, false, Start.AddDays(11), End, null)
+            NoMaterial(1, 0, Start, Start.AddDays(10)),
+            NoMaterial(2, 1, Start.AddDays(11), End)
         });
         var planned = await batchService.PlanBatchAsync(batch.Id, plan, 1);
         Assert.Equal(nameof(BatchStatus.InProduction), planned.Status);
@@ -81,7 +84,7 @@ public class BatchWorkflowTests
         await batchService.PlanBatchAsync(batch.Id,
             new PlanBatchDto(new List<WorkshopPlanItemDto>
             {
-                new(1, 0, false, Start, End, null)
+                NoMaterial(1, 0, Start, End)
             }), 1);
 
         var work = await workService.SubmitWorkAsync(

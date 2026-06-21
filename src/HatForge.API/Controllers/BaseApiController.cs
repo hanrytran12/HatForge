@@ -13,6 +13,15 @@ public abstract class BaseApiController : ControllerBase
             ? id
             : throw new UnauthorizedException("User id claim missing");
 
+    protected int? CurrentWorkshopId
+    {
+        get
+        {
+            var val = User.FindFirstValue("workshopId");
+            return int.TryParse(val, out var id) ? id : null;
+        }
+    }
+
     protected OkObjectResult Success<T>(T data) =>
         Ok(ApiResponse<T>.Ok(data));
 }

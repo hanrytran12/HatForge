@@ -23,10 +23,8 @@ public class SignalRNotificationPublisher : INotificationPublisher
         _unitOfWork = unitOfWork;
     }
 
-    public async Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload)
-    {
+    public async Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload) =>
         await _hub.Clients.Group($"workshop_{workshopId}").SendAsync("WorkSubmitted", payload);
-    }
 
     public async Task NotifyWorkApprovedAsync(int batchId, int staffId, object payload)
     {
@@ -51,24 +49,18 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
-    public async Task NotifyTransferRequestedAsync(object payload)
-    {
+    public async Task NotifyTransferRequestedAsync(object payload) =>
         await _hub.Clients.Group("leads").SendAsync("TransferRequested", payload);
-    }
 
-    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload)
-    {
+    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload) =>
         await Task.WhenAll(
             _hub.Clients.Group($"workshop_{toWorkshopId}").SendAsync("TransferApproved", payload),
             _hub.Clients.Group($"batch_{batchId}").SendAsync("TransferApproved", payload));
-    }
 
-    public async Task NotifyBatchCompletedAsync(int batchId, object payload)
-    {
+    public async Task NotifyBatchCompletedAsync(int batchId, object payload) =>
         await Task.WhenAll(
             _hub.Clients.Group($"batch_{batchId}").SendAsync("BatchCompleted", payload),
             _hub.Clients.Group("admins").SendAsync("BatchCompleted", payload));
-    }
 
     public async Task NotifyBatchAssignedToLeadAsync(int leadId, object payload)
     {
@@ -80,6 +72,31 @@ public class SignalRNotificationPublisher : INotificationPublisher
             "New batch assigned to you",
             "Admin has assigned a new batch for you to plan.",
             payload);
+    }
+
+    public async Task NotifyBatchPlannedAsync(int workshopId, object payload)
+    {
+        await _hub.Clients.Group($"workshop_{workshopId}").SendAsync("BatchPlanned", payload);
+
+        // Persist notification for all QC users of this workshop
+        var qcUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == workshopId &&
+                 (x.Role == Domain.Enums.UserRole.QCWorkshop));
+
+        foreach (var qc in qcUsers)
+        {
+            await SaveAsync(qc.Id, "BatchPlanned",
+                "Your workshop has been assigned to a batch",
+                $"Workshop has been scheduled in a batch production plan.",
+                payload);
+        }
+    }
+
+    public async Task NotifyMaterialDeliveryConfirmedAsync(int batchId, int workshopId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"batch_{batchId}").SendAsync("MaterialConfirmed", payload),
+            _hub.Clients.Group("leads").SendAsync("MaterialConfirmed", payload));
     }
 
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)

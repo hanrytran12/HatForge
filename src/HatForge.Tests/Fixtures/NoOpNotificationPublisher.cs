@@ -11,4 +11,6 @@ public class NoOpNotificationPublisher : INotificationPublisher
     public Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload) => Task.CompletedTask;
     public Task NotifyBatchCompletedAsync(int batchId, object payload) => Task.CompletedTask;
     public Task NotifyBatchAssignedToLeadAsync(int leadId, object payload) => Task.CompletedTask;
+    public Task NotifyBatchPlannedAsync(int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyMaterialDeliveryConfirmedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
 }
