@@ -50,10 +50,13 @@ public class BatchService : IBatchService
         await _unitOfWork.Batches.AddAsync(batch);
         await _unitOfWork.SaveChangesAsync();
 
-        await _notifications.NotifyBatchCreatedAsync(new
+        await _notifications.NotifyBatchAssignedToLeadAsync(dto.AssignToLeadId, new
         {
             BatchId = batch.Id,
             batch.BatchNumber,
+            batch.TargetQuantity,
+            StartDate = batch.StartDate,
+            EndDate = batch.EndDate,
             LeadId = dto.AssignToLeadId
         });
 
@@ -109,6 +112,11 @@ public class BatchService : IBatchService
             if (item.StartDate < batch.StartDate || item.EndDate > batch.EndDate)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: dates must be within batch range ({batch.StartDate:yyyy-MM-dd} – {batch.EndDate:yyyy-MM-dd})");
+
+            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue
+                && (item.MaterialDeliveryDate.Value < batch.StartDate || item.MaterialDeliveryDate.Value > batch.EndDate))
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId}: material delivery date must be within batch range ({batch.StartDate:yyyy-MM-dd} – {batch.EndDate:yyyy-MM-dd})");
 
             if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue
                 && item.MaterialDeliveryDate.Value >= item.StartDate)
@@ -170,6 +178,19 @@ public class BatchService : IBatchService
     public async Task<IReadOnlyList<BatchListDto>> GetAllBatchesAsync()
     {
         var batches = await _unitOfWork.Batches.FindAsync(x => true,
+            new[] { "HatModel" });
+        return batches
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new BatchListDto(
+                x.Id, x.BatchNumber, x.HatModel?.Name ?? "",
+                x.Status.ToString(), x.StartDate, x.EndDate, x.CreatedAt))
+            .ToList();
+    }
+
+    public async Task<IReadOnlyList<BatchListDto>> GetBatchesByLeadAsync(int leadId)
+    {
+        var batches = await _unitOfWork.Batches.FindAsync(
+            x => x.AssignedToLeadId == leadId,
             new[] { "HatModel" });
         return batches
             .OrderByDescending(x => x.CreatedAt)
