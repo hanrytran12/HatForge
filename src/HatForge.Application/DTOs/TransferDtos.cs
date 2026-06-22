@@ -19,6 +19,14 @@ public record TransferRequestDto(
 
 public record CreateTransferDto(int BatchId);
 
+public record FinalReviewDto(int BatchId, string BatchNumber, string Status);
+
+public record CreateTransferResultDto(
+    bool IsFinalWorkshop,
+    TransferRequestDto? Transfer,   // null when IsFinalWorkshop = true
+    string BatchStatus              // current batch status after the operation
+);
+
 public record ApproveTransferDto(int TransferId);
 
 public record ConfirmReceiptDto(int TransferId);

@@ -55,24 +55,46 @@ public class BatchWorkflowTests
         Assert.Equal(nameof(WorkStatus.Approved), approved.Status);
 
         // 5. QC of workshop 1 creates a transfer request → server auto-determines next workshop
-        var transfer = await transferService.CreateTransferRequestAsync(
+        var transferResult = await transferService.CreateTransferRequestAsync(
             new CreateTransferDto(batch.Id), qcId: 3);
-        Assert.Equal(nameof(TransferStatus.Pending), transfer.Status);
+        Assert.False(transferResult.IsFinalWorkshop);
+        Assert.NotNull(transferResult.Transfer);
+        Assert.Equal(nameof(TransferStatus.Pending), transferResult.Transfer!.Status);
 
         // 6. Lead approves the transfer
         var approvedTransfer = await transferService.ApproveTransferAsync(
-            new ApproveTransferDto(transfer.Id), 1);
+            new ApproveTransferDto(transferResult.Transfer.Id), 1);
         Assert.Equal(nameof(TransferStatus.Approved), approvedTransfer.Status);
 
         // 7. QC of workshop 2 confirms receipt → workshop 1 marked completed
         var received = await transferService.ConfirmReceiptAsync(
-            new ConfirmReceiptDto(transfer.Id), qcId: 5);
+            new ConfirmReceiptDto(transferResult.Transfer.Id), qcId: 5);
         Assert.Equal(nameof(TransferStatus.Transferred), received.Status);
 
-        // 8. Workshop 2 (last in chain) completes → batch Completed
-        var final = await batchService.MarkWorkshopCompletedAsync(batch.Id, 2);
-        Assert.Equal(nameof(BatchStatus.Completed), final.Status);
-        Assert.NotNull(final.CompletedAt);
+        // 8. Staff at workshop 2 submits work, QC approves it
+        ctx.Users.Add(TestDataFactory.Staff(id: 6, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var work2 = await workService.SubmitWorkAsync(
+            new SubmitWorkDto(batch.Id, 2, 100, new List<string> { "/uploads/w2.jpg" }), staffId: 6);
+        var approved2 = await workService.ApproveWorkAsync(work2.Id, qcId: 5);
+        Assert.Equal(nameof(WorkStatus.Approved), approved2.Status);
+
+        // 9. QC of workshop 2 (last) calls transfer → no next workshop → PendingLeadReview
+        var finalTransfer = await transferService.CreateTransferRequestAsync(
+            new CreateTransferDto(batch.Id), qcId: 5);
+        Assert.True(finalTransfer.IsFinalWorkshop);
+        Assert.Equal(nameof(BatchStatus.PendingLeadReview), finalTransfer.BatchStatus);
+
+        // 10. Lead approves final → PendingGateQC
+        var afterLeadApprove = await batchService.LeadApproveFinalAsync(batch.Id, leadId: 1);
+        Assert.Equal(nameof(BatchStatus.PendingGateQC), afterLeadApprove.Status);
+
+        // 11. QC Gate confirms → Completed
+        ctx.Users.Add(TestDataFactory.QcGate(id: 7));
+        await ctx.SaveChangesAsync();
+        var completed = await batchService.GateConfirmAsync(batch.Id, qcGateId: 7);
+        Assert.Equal(nameof(BatchStatus.Completed), completed.Status);
+        Assert.NotNull(completed.CompletedAt);
     }
 
     [Fact]

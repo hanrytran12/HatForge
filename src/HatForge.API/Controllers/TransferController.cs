@@ -16,7 +16,7 @@ public class TransferController : BaseApiController
 
     [HttpPost]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
-    public async Task<ActionResult<ApiResponse<TransferRequestDto>>> Create([FromBody] CreateTransferDto dto)
+    public async Task<ActionResult<ApiResponse<CreateTransferResultDto>>> Create([FromBody] CreateTransferDto dto)
         => Success(await _transferService.CreateTransferRequestAsync(dto, CurrentUserId));
 
     [HttpPut("approve")]

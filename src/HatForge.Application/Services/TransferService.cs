@@ -18,7 +18,7 @@ public class TransferService : ITransferService
         _notifications = notifications;
     }
 
-    public async Task<TransferRequestDto> CreateTransferRequestAsync(CreateTransferDto dto, int qcId)
+    public async Task<CreateTransferResultDto> CreateTransferRequestAsync(CreateTransferDto dto, int qcId)
     {
         var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
             ?? throw new NotFoundException("QC user not found");
@@ -45,12 +45,39 @@ public class TransferService : ITransferService
         // Auto-determine next workshop in chain
         var toBw = allBatchWorkshops
             .OrderBy(x => x.OrderIndex)
-            .FirstOrDefault(x => x.OrderIndex == fromBw.OrderIndex + 1)
-            ?? throw new BusinessRuleException("Your workshop is the last in the chain — no transfer needed");
+            .FirstOrDefault(x => x.OrderIndex == fromBw.OrderIndex + 1);
 
-        // Source workshop must have approved work and nothing pending QC review
+        // Load work records upfront (needed for both final and mid-chain cases)
         var works = await _unitOfWork.Works.FindAsync(
             x => x.BatchId == dto.BatchId && x.WorkshopId == fromWorkshopId);
+
+        // Last workshop in chain — trigger final review instead of transfer
+        if (toBw == null)
+        {
+            if (!works.Any(x => x.Status == WorkStatus.Approved))
+                throw new BusinessRuleException("Your workshop has no approved work yet");
+            if (works.Any(x => x.Status == WorkStatus.Submitted))
+                throw new BusinessRuleException("Your workshop still has work pending QC review");
+
+            fromBw.IsCompleted = true;
+            _unitOfWork.BatchWorkshops.Update(fromBw);
+
+            batch.Status = BatchStatus.PendingLeadReview;
+            _unitOfWork.Batches.Update(batch);
+            await _unitOfWork.SaveChangesAsync();
+
+            if (batch.AssignedToLeadId.HasValue)
+                await _notifications.NotifyFinalReviewRequestedAsync(batch.AssignedToLeadId.Value, new
+                {
+                    BatchId = batch.Id,
+                    batch.BatchNumber,
+                    Message = "All workshops completed. Please review and approve the final batch."
+                });
+
+            return new CreateTransferResultDto(true, null, BatchStatus.PendingLeadReview.ToString());
+        }
+
+        // Source workshop must have approved work and nothing pending QC review
         if (!works.Any(x => x.Status == WorkStatus.Approved))
             throw new BusinessRuleException("Your workshop has no approved work yet");
         if (works.Any(x => x.Status == WorkStatus.Submitted))
@@ -81,7 +108,8 @@ public class TransferService : ITransferService
             await _notifications.NotifyTransferRequestedAsync(batch.AssignedToLeadId.Value,
                 new { TransferId = transfer.Id, BatchId = dto.BatchId });
 
-        return await MapToDto(transfer.Id);
+        var transferDto = await MapToDto(transfer.Id);
+        return new CreateTransferResultDto(false, transferDto, batch.Status.ToString());
     }
 
     public async Task<TransferRequestDto> ApproveTransferAsync(ApproveTransferDto dto, int leadId)
@@ -143,17 +171,9 @@ public class TransferService : ITransferService
             ?? throw new NotFoundException("Batch not found");
 
         var allWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == transfer.BatchId);
-        var allCompleted = allWorkshops.Count > 0 && allWorkshops.All(x => x.IsCompleted);
-
-        if (allCompleted)
-        {
-            batch.Status = BatchStatus.Completed;
-            batch.CompletedAt = DateTime.UtcNow;
-        }
-        else
-        {
-            batch.Status = BatchStatus.InProduction;
-        }
+        // The last workshop in the chain uses CreateTransferRequest (no-next-workshop path),
+        // so ConfirmReceiptAsync is only reached for mid-chain hops — always keep InProduction.
+        batch.Status = BatchStatus.InProduction;
         _unitOfWork.Batches.Update(batch);
 
         await _unitOfWork.SaveChangesAsync();
@@ -164,9 +184,6 @@ public class TransferService : ITransferService
             TransferId = transfer.Id,
             transfer.ToWorkshopId
         });
-
-        if (allCompleted)
-            await _notifications.NotifyBatchCompletedAsync(transfer.BatchId, new { BatchId = transfer.BatchId });
 
         return await MapToDto(transfer.Id);
     }

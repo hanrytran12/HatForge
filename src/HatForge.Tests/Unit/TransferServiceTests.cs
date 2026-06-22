@@ -57,10 +57,12 @@ public class TransferServiceTests
         // QC id=3 belongs to workshop 1
         var result = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
 
-        Assert.Equal(nameof(TransferStatus.Pending), result.Status);
-        Assert.Equal(1, result.FromWorkshopId);
-        Assert.Equal(2, result.ToWorkshopId);
-        Assert.Equal(3, result.CreatedByQCId);
+        Assert.False(result.IsFinalWorkshop);
+        Assert.NotNull(result.Transfer);
+        Assert.Equal(nameof(TransferStatus.Pending), result.Transfer!.Status);
+        Assert.Equal(1, result.Transfer.FromWorkshopId);
+        Assert.Equal(2, result.Transfer.ToWorkshopId);
+        Assert.Equal(3, result.Transfer.CreatedByQCId);
     }
 
     [Fact]
@@ -111,7 +113,7 @@ public class TransferServiceTests
         var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
 
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
-        var result = await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Id), leadId: 1);
+        var result = await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
 
         Assert.Equal(nameof(TransferStatus.Approved), result.Status);
         Assert.Equal(1, result.ApprovedByLeadId);
@@ -128,7 +130,7 @@ public class TransferServiceTests
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
 
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            service.ApproveTransferAsync(new ApproveTransferDto(transfer.Id), leadId: 3));
+            service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 3));
     }
 
     [Fact]
@@ -143,8 +145,8 @@ public class TransferServiceTests
         var service = new TransferService(uow, new NoOpNotificationPublisher());
 
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
-        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Id), leadId: 1);
-        var result = await service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Id), qcId: 5);
+        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
+        var result = await service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 5);
 
         Assert.Equal(nameof(TransferStatus.Transferred), result.Status);
         Assert.Equal(5, result.ConfirmedByQCId);
@@ -167,7 +169,7 @@ public class TransferServiceTests
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Id), qcId: 5));
+            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 5));
     }
 
     [Fact]
@@ -179,10 +181,10 @@ public class TransferServiceTests
         var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
 
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
-        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Id), leadId: 1);
+        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
 
         // QC id 3 belongs to workshop 1, not the destination workshop 2
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Id), qcId: 3));
+            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 3));
     }
 }

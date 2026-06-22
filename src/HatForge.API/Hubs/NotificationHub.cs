@@ -22,6 +22,9 @@ public class NotificationHub : Hub
     public async Task JoinLeads() =>
         await Groups.AddToGroupAsync(Context.ConnectionId, "leads");
 
+    public async Task JoinQCGate() =>
+        await Groups.AddToGroupAsync(Context.ConnectionId, "qcgate");
+
     public async Task JoinUser(int userId) =>
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
 }
