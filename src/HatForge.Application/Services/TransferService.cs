@@ -74,6 +74,13 @@ public class TransferService : ITransferService
         await _notifications.NotifyTransferApprovedAsync(transfer.BatchId, transfer.ToWorkshopId,
             new { TransferId = transfer.Id });
 
+        await _notifications.NotifyWorkCanBeginAsync(transfer.ToWorkshopId, new
+        {
+            transfer.BatchId,
+            TransferId = transfer.Id,
+            ToWorkshopId = transfer.ToWorkshopId
+        });
+
         return await MapToDto(transfer.Id);
     }
 

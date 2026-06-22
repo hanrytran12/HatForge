@@ -19,6 +19,7 @@ public interface IWorkService
     Task<WorkDto> ApproveWorkAsync(int workId, int qcId);
     Task<WorkDto> RejectWorkAsync(RejectWorkDto dto, int qcId);
     Task<IReadOnlyList<WorkDto>> GetWorksByBatchAsync(int batchId);
+    Task<IReadOnlyList<WorkDto>> GetWorksByBatchAndWorkshopAsync(int batchId, int workshopId);
 }
 
 public interface ITransferService

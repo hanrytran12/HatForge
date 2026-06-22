@@ -14,7 +14,7 @@ public class BatchServiceTests
 
     // Helper: workshop item without materials
     private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
-        => new(workshopId, order, false, start, end, null, null, null);
+        => new(workshopId, order, false, start, end, null, null);
 
     // Helper: workshop item with materials
     private static WorkshopPlanItemDto WithMaterial(int workshopId, int order, DateTime start, DateTime end, DateTime deliveryDate)

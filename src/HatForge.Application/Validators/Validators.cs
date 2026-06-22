@@ -55,7 +55,8 @@ public class SubmitWorkValidator : AbstractValidator<SubmitWorkDto>
         RuleFor(x => x.BatchId).GreaterThan(0);
         RuleFor(x => x.WorkshopId).GreaterThan(0);
         RuleFor(x => x.Quantity).GreaterThan(0).WithMessage("Quantity must be greater than 0");
-        RuleFor(x => x.PhotoUrl).NotEmpty().MaximumLength(512);
+        RuleFor(x => x.PhotoUrls).NotEmpty().WithMessage("At least one photo is required");
+        RuleForEach(x => x.PhotoUrls).NotEmpty().MaximumLength(512);
     }
 }
 
@@ -64,7 +65,7 @@ public class RejectWorkValidator : AbstractValidator<RejectWorkDto>
     public RejectWorkValidator()
     {
         RuleFor(x => x.WorkId).GreaterThan(0);
-        RuleFor(x => x.RejectionReason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.RejectionNotes).NotEmpty().MaximumLength(500);
     }
 }
 

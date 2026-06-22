@@ -3,6 +3,7 @@ using System;
 using HatForge.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HatForge.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260622081235_RemoveRejectionReasonFromWork")]
+    partial class RemoveRejectionReasonFromWork
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -340,6 +343,11 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int>("BatchId")
                         .HasColumnType("integer");
 
+                    b.Property<string>("PhotoUrl")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<int>("Quantity")
                         .HasColumnType("integer");
 
@@ -376,35 +384,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.HasIndex("WorkshopId");
 
                     b.ToTable("Works");
-                });
-
-            modelBuilder.Entity("HatForge.Domain.Entities.WorkPhoto", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
-
-                    b.Property<string>("PhotoUrl")
-                        .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("character varying(512)");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("WorkId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("WorkId");
-
-                    b.ToTable("WorkPhotos");
                 });
 
             modelBuilder.Entity("HatForge.Domain.Entities.Workshop", b =>
@@ -584,17 +563,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("Workshop");
                 });
 
-            modelBuilder.Entity("HatForge.Domain.Entities.WorkPhoto", b =>
-                {
-                    b.HasOne("HatForge.Domain.Entities.Work", "Work")
-                        .WithMany("Photos")
-                        .HasForeignKey("WorkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Work");
-                });
-
             modelBuilder.Entity("HatForge.Domain.Entities.Batch", b =>
                 {
                     b.Navigation("BatchWorkshops");
@@ -619,11 +587,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("BatchWorkshops");
 
                     b.Navigation("Users");
-                });
-
-            modelBuilder.Entity("HatForge.Domain.Entities.Work", b =>
-                {
-                    b.Navigation("Photos");
                 });
 #pragma warning restore 612, 618
         }

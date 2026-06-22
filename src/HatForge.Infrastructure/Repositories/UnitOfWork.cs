@@ -10,6 +10,7 @@ public class UnitOfWork : IUnitOfWork
     private readonly AppDbContext _context;
     private Repository<Batch>? _batches;
     private Repository<Work>? _works;
+    private Repository<WorkPhoto>? _workPhotos;
     private Repository<TransferRequest>? _transferRequests;
     private Repository<MaterialDelivery>? _materialDeliveries;
     private Repository<MaterialDeliveryItem>? _materialDeliveryItems;
@@ -23,6 +24,7 @@ public class UnitOfWork : IUnitOfWork
 
     public IRepository<Batch> Batches => _batches ??= new Repository<Batch>(_context);
     public IRepository<Work> Works => _works ??= new Repository<Work>(_context);
+    public IRepository<WorkPhoto> WorkPhotos => _workPhotos ??= new Repository<WorkPhoto>(_context);
     public IRepository<TransferRequest> TransferRequests => _transferRequests ??= new Repository<TransferRequest>(_context);
     public IRepository<MaterialDelivery> MaterialDeliveries => _materialDeliveries ??= new Repository<MaterialDelivery>(_context);
     public IRepository<MaterialDeliveryItem> MaterialDeliveryItems => _materialDeliveryItems ??= new Repository<MaterialDeliveryItem>(_context);

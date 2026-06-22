@@ -8,6 +8,7 @@ using HatForge.Application.Interfaces;
 using HatForge.Application.Services;
 using HatForge.Application.Validators;
 using HatForge.Infrastructure;
+using HatForge.Infrastructure.Options;
 using HatForge.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
@@ -115,7 +116,8 @@ builder.Services.AddScoped<IBatchService, BatchService>();
 builder.Services.AddScoped<IWorkService, WorkService>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IMaterialDeliveryService, MaterialDeliveryService>();
-builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection("Cloudinary"));
+builder.Services.AddScoped<IFileStorageService, CloudinaryFileStorageService>();
 builder.Services.AddScoped<INotificationPublisher, SignalRNotificationPublisher>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
