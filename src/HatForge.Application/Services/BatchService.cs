@@ -249,8 +249,8 @@ public class BatchService : IBatchService
 
         if (allCompleted)
         {
-            batch.Status = BatchStatus.Completed;
-            batch.CompletedAt = DateTime.UtcNow;
+            // All workshops done — go through Lead review, not directly to Completed
+            batch.Status = BatchStatus.PendingLeadReview;
         }
         else
         {
@@ -260,8 +260,63 @@ public class BatchService : IBatchService
         _unitOfWork.Batches.Update(batch);
         await _unitOfWork.SaveChangesAsync();
 
-        if (allCompleted)
-            await _notifications.NotifyBatchCompletedAsync(batchId, new { BatchId = batchId });
+        if (allCompleted && batch.AssignedToLeadId.HasValue)
+            await _notifications.NotifyFinalReviewRequestedAsync(batch.AssignedToLeadId.Value, new
+            {
+                BatchId = batchId,
+                batch.BatchNumber,
+                Message = "Xưởng cuối đã xong, cần bạn review."
+            });
+
+        return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
+    }
+
+    public async Task<BatchDto> LeadApproveFinalAsync(int batchId, int leadId)
+    {
+        var batch = await _unitOfWork.Batches.GetByIdAsync(batchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.AssignedToLeadId != leadId)
+            throw new ForbiddenException("Only the assigned lead can approve this batch");
+
+        if (batch.Status != BatchStatus.PendingLeadReview)
+            throw new BusinessRuleException("Batch is not pending lead review");
+
+        batch.Status = BatchStatus.PendingGateQC;
+        _unitOfWork.Batches.Update(batch);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notifications.NotifyGateQCReviewRequestedAsync(new
+        {
+            BatchId = batch.Id,
+            batch.BatchNumber,
+            Message = "Lead has approved. Please perform final quality check."
+        });
+
+        return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
+    }
+
+    public async Task<BatchDto> GateConfirmAsync(int batchId, int qcGateId)
+    {
+        var qcGate = await _unitOfWork.Users.GetByIdAsync(qcGateId)
+            ?? throw new NotFoundException("User not found");
+
+        if (qcGate.Role != UserRole.QCGate)
+            throw new ForbiddenException("Only QC Gate can perform final confirmation");
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(batchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.Status != BatchStatus.PendingGateQC)
+            throw new BusinessRuleException("Batch is not pending gate QC confirmation");
+
+        batch.Status = BatchStatus.Completed;
+        batch.CompletedAt = DateTime.UtcNow;
+        _unitOfWork.Batches.Update(batch);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notifications.NotifyBatchCompletedAsync(batchId, batch.AssignedToLeadId,
+            new { BatchId = batchId, batch.BatchNumber });
 
         return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
     }

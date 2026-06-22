@@ -9,14 +9,27 @@ public record TransferRequestDto(
     int ToWorkshopId,
     string ToWorkshopName,
     DateTime CreatedAt,
+    int? CreatedByQCId,
     int? ApprovedByLeadId,
     DateTime? ApprovedAt,
+    int? ConfirmedByQCId,
+    DateTime? ConfirmedAt,
     string Status
 );
 
-public record CreateTransferDto(int BatchId, int FromWorkshopId, int ToWorkshopId);
+public record CreateTransferDto(int BatchId);
+
+public record FinalReviewDto(int BatchId, string BatchNumber, string Status);
+
+public record CreateTransferResultDto(
+    bool IsFinalWorkshop,
+    TransferRequestDto? Transfer,   // null when IsFinalWorkshop = true
+    string BatchStatus              // current batch status after the operation
+);
 
 public record ApproveTransferDto(int TransferId);
+
+public record ConfirmReceiptDto(int TransferId);
 
 public record MaterialDeliveryDto(
     int Id,

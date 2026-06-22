@@ -74,9 +74,6 @@ public class CreateTransferValidator : AbstractValidator<CreateTransferDto>
     public CreateTransferValidator()
     {
         RuleFor(x => x.BatchId).GreaterThan(0);
-        RuleFor(x => x.FromWorkshopId).GreaterThan(0);
-        RuleFor(x => x.ToWorkshopId).GreaterThan(0).NotEqual(x => x.FromWorkshopId)
-            .WithMessage("Destination workshop must be different from source");
     }
 }
 

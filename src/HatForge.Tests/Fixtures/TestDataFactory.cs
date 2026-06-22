@@ -30,6 +30,9 @@ public static class TestDataFactory
     public static User Admin(int id = 4) => new()
         { Id = id, Email = $"admin{id}@hf.com", Name = "Admin", Role = UserRole.Admin, PasswordHash = "x" };
 
+    public static User QcGate(int id = 6) => new()
+        { Id = id, Email = $"qcgate{id}@hf.com", Name = "QCGate", Role = UserRole.QCGate, PasswordHash = "x" };
+
     public static Workshop Workshop(int id = 1, bool requiresMaterials = false) => new()
         { Id = id, Name = $"Workshop {id}", RequiresMaterials = requiresMaterials };
 

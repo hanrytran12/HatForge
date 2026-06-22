@@ -46,4 +46,14 @@ public class BatchController : BaseApiController
     [Authorize(Roles = nameof(UserRole.QCGate) + "," + nameof(UserRole.Lead))]
     public async Task<ActionResult<ApiResponse<BatchDto>>> CompleteWorkshop(int id, int workshopId)
         => Success(await _batchService.MarkWorkshopCompletedAsync(id, workshopId));
+
+    [HttpPut("{id:int}/lead-approve")]
+    [Authorize(Roles = nameof(UserRole.Lead))]
+    public async Task<ActionResult<ApiResponse<BatchDto>>> LeadApproveFinal(int id)
+        => Success(await _batchService.LeadApproveFinalAsync(id, CurrentUserId));
+
+    [HttpPut("{id:int}/gate-confirm")]
+    [Authorize(Roles = nameof(UserRole.QCGate))]
+    public async Task<ActionResult<ApiResponse<BatchDto>>> GateConfirm(int id)
+        => Success(await _batchService.GateConfirmAsync(id, CurrentUserId));
 }

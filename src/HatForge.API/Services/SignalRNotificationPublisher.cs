@@ -49,18 +49,60 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
-    public async Task NotifyTransferRequestedAsync(object payload) =>
-        await _hub.Clients.Group("leads").SendAsync("TransferRequested", payload);
+    public async Task NotifyTransferRequestedAsync(int leadId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group("leads").SendAsync("TransferRequested", payload),
+            _hub.Clients.Group($"user_{leadId}").SendAsync("TransferRequested", payload));
 
-    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload) =>
+        await SaveAsync(leadId, "TransferRequested",
+            "Yêu cầu duyệt chuyển lô",
+            "Một xưởng yêu cầu bạn xuống duyệt lại lô hàng trước khi chuyển.",
+            payload);
+    }
+
+    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload)
+    {
         await Task.WhenAll(
             _hub.Clients.Group($"workshop_{toWorkshopId}").SendAsync("TransferApproved", payload),
             _hub.Clients.Group($"batch_{batchId}").SendAsync("TransferApproved", payload));
 
-    public async Task NotifyBatchCompletedAsync(int batchId, object payload) =>
+        var qcUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == toWorkshopId && x.Role == Domain.Enums.UserRole.QCWorkshop);
+
+        foreach (var qc in qcUsers)
+        {
+            await SaveAsync(qc.Id, "TransferApproved",
+                "Có lô hàng chờ bạn xác nhận nhận",
+                $"Lô hàng đã được duyệt và đang chờ xưởng của bạn xác nhận đã nhận được.",
+                payload);
+        }
+    }
+
+    public async Task NotifyBatchCompletedAsync(int batchId, int? leadId, object payload)
+    {
         await Task.WhenAll(
             _hub.Clients.Group($"batch_{batchId}").SendAsync("BatchCompleted", payload),
             _hub.Clients.Group("admins").SendAsync("BatchCompleted", payload));
+
+        var admins = await _unitOfWork.Users.FindAsync(x => x.Role == Domain.Enums.UserRole.Admin);
+        foreach (var admin in admins)
+        {
+            await SaveAsync(admin.Id, "BatchCompleted",
+                "Lô hàng đã hoàn thành",
+                $"Lô hàng #{batchId} đã được QC Gate xác nhận hoàn thành.",
+                payload);
+        }
+
+        if (leadId.HasValue)
+        {
+            await _hub.Clients.Group($"user_{leadId}").SendAsync("BatchCompleted", payload);
+            await SaveAsync(leadId.Value, "BatchCompleted",
+                "Lô hàng đã hoàn thành",
+                $"Lô hàng #{batchId} mà bạn phụ trách đã được QC Gate xác nhận hoàn thành.",
+                payload);
+        }
+    }
 
     public async Task NotifyBatchAssignedToLeadAsync(int leadId, object payload)
     {
@@ -124,6 +166,32 @@ public class SignalRNotificationPublisher : INotificationPublisher
             await SaveAsync(staff.Id, "WorkCanBegin",
                 "Your workshop can now begin work",
                 "Materials/batch have arrived. You can now submit work for this batch.",
+                payload);
+        }
+    }
+
+    public async Task NotifyFinalReviewRequestedAsync(int leadId, object payload)
+    {
+        await _hub.Clients.Group($"user_{leadId}").SendAsync("FinalReviewRequested", payload);
+
+        await SaveAsync(leadId, "FinalReviewRequested",
+            "Batch ready for final review",
+            "All workshops have completed. Please review and approve the final batch.",
+            payload);
+    }
+
+    public async Task NotifyGateQCReviewRequestedAsync(object payload)
+    {
+        await _hub.Clients.Group("qcgate").SendAsync("GateQCReviewRequested", payload);
+
+        var qcGateUsers = await _unitOfWork.Users.FindAsync(
+            x => x.Role == Domain.Enums.UserRole.QCGate);
+
+        foreach (var qc in qcGateUsers)
+        {
+            await SaveAsync(qc.Id, "GateQCReviewRequested",
+                "Final quality check required",
+                "Lead has approved the batch. Please perform the final quality confirmation.",
                 payload);
         }
     }
