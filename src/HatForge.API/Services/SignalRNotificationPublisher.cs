@@ -96,7 +96,36 @@ public class SignalRNotificationPublisher : INotificationPublisher
     {
         await Task.WhenAll(
             _hub.Clients.Group($"batch_{batchId}").SendAsync("MaterialConfirmed", payload),
-            _hub.Clients.Group("leads").SendAsync("MaterialConfirmed", payload));
+            _hub.Clients.Group("leads").SendAsync("MaterialConfirmed", payload),
+            _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialConfirmed", payload));
+
+        // Persist notification for all Staff of this workshop so they know they can begin work
+        var staffUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == workshopId && x.Role == Domain.Enums.UserRole.Staff);
+
+        foreach (var staff in staffUsers)
+        {
+            await SaveAsync(staff.Id, "MaterialConfirmed",
+                "Materials have arrived — you can begin work",
+                "Materials for your workshop have been confirmed. You may now submit work.",
+                payload);
+        }
+    }
+
+    public async Task NotifyWorkCanBeginAsync(int toWorkshopId, object payload)
+    {
+        await _hub.Clients.Group($"workshop_{toWorkshopId}").SendAsync("WorkCanBegin", payload);
+
+        var staffUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == toWorkshopId && x.Role == Domain.Enums.UserRole.Staff);
+
+        foreach (var staff in staffUsers)
+        {
+            await SaveAsync(staff.Id, "WorkCanBegin",
+                "Your workshop can now begin work",
+                "Materials/batch have arrived. You can now submit work for this batch.",
+                payload);
+        }
     }
 
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)
