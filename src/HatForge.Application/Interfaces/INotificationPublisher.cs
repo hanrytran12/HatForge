@@ -11,4 +11,5 @@ public interface INotificationPublisher
     Task NotifyBatchAssignedToLeadAsync(int leadId, object payload);
     Task NotifyBatchPlannedAsync(int workshopId, object payload);
     Task NotifyMaterialDeliveryConfirmedAsync(int batchId, int workshopId, object payload);
+    Task NotifyWorkCanBeginAsync(int toWorkshopId, object payload);
 }

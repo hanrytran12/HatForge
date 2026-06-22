@@ -13,6 +13,7 @@ public class AppDbContext : DbContext
     public DbSet<Batch> Batches => Set<Batch>();
     public DbSet<BatchWorkshop> BatchWorkshops => Set<BatchWorkshop>();
     public DbSet<Work> Works => Set<Work>();
+    public DbSet<WorkPhoto> WorkPhotos => Set<WorkPhoto>();
     public DbSet<TransferRequest> TransferRequests => Set<TransferRequest>();
     public DbSet<MaterialDelivery> MaterialDeliveries => Set<MaterialDelivery>();
     public DbSet<MaterialDeliveryItem> MaterialDeliveryItems => Set<MaterialDeliveryItem>();
@@ -71,7 +72,6 @@ public class AppDbContext : DbContext
 
         b.Entity<Work>(e =>
         {
-            e.Property(x => x.PhotoUrl).HasMaxLength(512);
             e.Property(x => x.RejectionNotes).HasMaxLength(500);
             e.HasOne(x => x.Batch)
                 .WithMany(x => x.Works)
@@ -89,6 +89,15 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.ReviewedByQCId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<WorkPhoto>(e =>
+        {
+            e.Property(x => x.PhotoUrl).IsRequired().HasMaxLength(512);
+            e.HasOne(x => x.Work)
+                .WithMany(x => x.Photos)
+                .HasForeignKey(x => x.WorkId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<TransferRequest>(e =>

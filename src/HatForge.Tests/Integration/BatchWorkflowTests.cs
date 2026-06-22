@@ -12,7 +12,7 @@ public class BatchWorkflowTests
     private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
 
     private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
-        => new(workshopId, order, false, start, end, null, null, null);
+        => new(workshopId, order, false, start, end, null, null);
 
     [Fact]
     public async Task FullWorkflow_CreatePlanSubmitApproveTransferComplete()
@@ -44,7 +44,7 @@ public class BatchWorkflowTests
 
         // 3. Staff submits work at workshop 1
         var work = await workService.SubmitWorkAsync(
-            new SubmitWorkDto(batch.Id, 1, 100, "/uploads/w1.jpg"), staffId: 2);
+            new SubmitWorkDto(batch.Id, 1, 100, new List<string> { "/uploads/w1.jpg" }), staffId: 2);
         Assert.Equal(nameof(WorkStatus.Submitted), work.Status);
 
         // 4. QC approves work
@@ -88,13 +88,12 @@ public class BatchWorkflowTests
             }), 1);
 
         var work = await workService.SubmitWorkAsync(
-            new SubmitWorkDto(batch.Id, 1, 50, "/uploads/x.jpg"), staffId: 2);
+            new SubmitWorkDto(batch.Id, 1, 50, new List<string> { "/uploads/x.jpg" }), staffId: 2);
 
         var rejected = await workService.RejectWorkAsync(
-            new RejectWorkDto(work.Id, "Material", "Wrong fabric color"), qcId: 3);
+            new RejectWorkDto(work.Id, "Wrong fabric color", new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), rejected.Status);
-        Assert.Equal("Material", rejected.RejectionReason);
         Assert.Equal("Wrong fabric color", rejected.RejectionNotes);
     }
 }

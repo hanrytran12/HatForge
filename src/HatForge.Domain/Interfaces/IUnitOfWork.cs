@@ -6,6 +6,7 @@ public interface IUnitOfWork : IDisposable
 {
     IRepository<Batch> Batches { get; }
     IRepository<Work> Works { get; }
+    IRepository<WorkPhoto> WorkPhotos { get; }
     IRepository<TransferRequest> TransferRequests { get; }
     IRepository<MaterialDelivery> MaterialDeliveries { get; }
     IRepository<MaterialDeliveryItem> MaterialDeliveryItems { get; }
