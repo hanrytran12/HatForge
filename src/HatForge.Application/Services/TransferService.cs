@@ -18,36 +18,68 @@ public class TransferService : ITransferService
         _notifications = notifications;
     }
 
-    public async Task<TransferRequestDto> CreateTransferRequestAsync(CreateTransferDto dto)
+    public async Task<TransferRequestDto> CreateTransferRequestAsync(CreateTransferDto dto, int qcId)
     {
+        var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
+            ?? throw new NotFoundException("QC user not found");
+        if (qc.Role != UserRole.QCWorkshop)
+            throw new ForbiddenException("Only QC Workshop can create transfer requests");
+        if (qc.WorkshopId == null)
+            throw new ForbiddenException("You are not assigned to any workshop");
+
         var batch = await _unitOfWork.Batches.GetByIdAsync(dto.BatchId)
             ?? throw new NotFoundException("Batch not found");
 
-        var fromBw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
-            x => x.BatchId == dto.BatchId && x.WorkshopId == dto.FromWorkshopId)
-            ?? throw new NotFoundException("Source workshop not in batch");
-        var toBw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
-            x => x.BatchId == dto.BatchId && x.WorkshopId == dto.ToWorkshopId)
-            ?? throw new NotFoundException("Destination workshop not in batch");
+        // Determine fromWorkshopId from QC's workshop
+        var fromWorkshopId = qc.WorkshopId.Value;
 
-        if (!fromBw.IsCompleted)
-            throw new BusinessRuleException("Source workshop has not completed work");
+        var allBatchWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(
+            x => x.BatchId == dto.BatchId);
 
-        if (toBw.OrderIndex != fromBw.OrderIndex + 1)
-            throw new BusinessRuleException("Destination workshop must be the next in chain");
+        var fromBw = allBatchWorkshops.FirstOrDefault(x => x.WorkshopId == fromWorkshopId)
+            ?? throw new NotFoundException("Your workshop is not part of this batch");
+
+        if (fromBw.IsCompleted)
+            throw new BusinessRuleException("Your workshop is already completed");
+
+        // Auto-determine next workshop in chain
+        var toBw = allBatchWorkshops
+            .OrderBy(x => x.OrderIndex)
+            .FirstOrDefault(x => x.OrderIndex == fromBw.OrderIndex + 1)
+            ?? throw new BusinessRuleException("Your workshop is the last in the chain — no transfer needed");
+
+        // Source workshop must have approved work and nothing pending QC review
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == dto.BatchId && x.WorkshopId == fromWorkshopId);
+        if (!works.Any(x => x.Status == WorkStatus.Approved))
+            throw new BusinessRuleException("Your workshop has no approved work yet");
+        if (works.Any(x => x.Status == WorkStatus.Submitted))
+            throw new BusinessRuleException("Your workshop still has work pending QC review");
+
+        // Prevent duplicate active transfer request
+        var existing = await _unitOfWork.TransferRequests.FirstOrDefaultAsync(
+            x => x.BatchId == dto.BatchId
+              && x.FromWorkshopId == fromWorkshopId
+              && x.ToWorkshopId == toBw.WorkshopId
+              && (x.Status == TransferStatus.Pending || x.Status == TransferStatus.Approved));
+        if (existing != null)
+            throw new BusinessRuleException("There is already an active transfer request for this workshop hop");
 
         var transfer = new TransferRequest
         {
             BatchId = dto.BatchId,
-            FromWorkshopId = dto.FromWorkshopId,
-            ToWorkshopId = dto.ToWorkshopId,
+            FromWorkshopId = fromWorkshopId,
+            ToWorkshopId = toBw.WorkshopId,
+            CreatedByQCId = qcId,
             Status = TransferStatus.Pending
         };
 
         await _unitOfWork.TransferRequests.AddAsync(transfer);
         await _unitOfWork.SaveChangesAsync();
 
-        await _notifications.NotifyTransferRequestedAsync(new { TransferId = transfer.Id, BatchId = dto.BatchId });
+        if (batch.AssignedToLeadId.HasValue)
+            await _notifications.NotifyTransferRequestedAsync(batch.AssignedToLeadId.Value,
+                new { TransferId = transfer.Id, BatchId = dto.BatchId });
 
         return await MapToDto(transfer.Id);
     }
@@ -65,21 +97,76 @@ public class TransferService : ITransferService
         if (transfer.Status != TransferStatus.Pending)
             throw new BusinessRuleException("Transfer is not pending");
 
-        transfer.Status = TransferStatus.Transferred;
+        transfer.Status = TransferStatus.Approved;
         transfer.ApprovedByLeadId = leadId;
         transfer.ApprovedAt = DateTime.UtcNow;
         _unitOfWork.TransferRequests.Update(transfer);
         await _unitOfWork.SaveChangesAsync();
 
         await _notifications.NotifyTransferApprovedAsync(transfer.BatchId, transfer.ToWorkshopId,
-            new { TransferId = transfer.Id });
+            new { TransferId = transfer.Id, transfer.BatchId, transfer.ToWorkshopId });
+
+        return await MapToDto(transfer.Id);
+    }
+
+    public async Task<TransferRequestDto> ConfirmReceiptAsync(ConfirmReceiptDto dto, int qcId)
+    {
+        var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
+            ?? throw new NotFoundException("QC user not found");
+        if (qc.Role != UserRole.QCWorkshop)
+            throw new ForbiddenException("Only QC Workshop can confirm receipt");
+
+        var transfer = await _unitOfWork.TransferRequests.GetByIdAsync(dto.TransferId)
+            ?? throw new NotFoundException("Transfer request not found");
+
+        if (transfer.Status != TransferStatus.Approved)
+            throw new BusinessRuleException("Transfer must be approved by Lead before it can be received");
+
+        if (qc.WorkshopId != transfer.ToWorkshopId)
+            throw new ForbiddenException("You can only confirm receipt for your own workshop");
+
+        transfer.Status = TransferStatus.Transferred;
+        transfer.ConfirmedByQCId = qcId;
+        transfer.ConfirmedAt = DateTime.UtcNow;
+        _unitOfWork.TransferRequests.Update(transfer);
+
+        // Mark the source workshop as completed (successful) now that the next workshop has received it
+        var fromBw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
+            x => x.BatchId == transfer.BatchId && x.WorkshopId == transfer.FromWorkshopId);
+        if (fromBw != null && !fromBw.IsCompleted)
+        {
+            fromBw.IsCompleted = true;
+            _unitOfWork.BatchWorkshops.Update(fromBw);
+        }
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(transfer.BatchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        var allWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == transfer.BatchId);
+        var allCompleted = allWorkshops.Count > 0 && allWorkshops.All(x => x.IsCompleted);
+
+        if (allCompleted)
+        {
+            batch.Status = BatchStatus.Completed;
+            batch.CompletedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            batch.Status = BatchStatus.InProduction;
+        }
+        _unitOfWork.Batches.Update(batch);
+
+        await _unitOfWork.SaveChangesAsync();
 
         await _notifications.NotifyWorkCanBeginAsync(transfer.ToWorkshopId, new
         {
             transfer.BatchId,
             TransferId = transfer.Id,
-            ToWorkshopId = transfer.ToWorkshopId
+            transfer.ToWorkshopId
         });
+
+        if (allCompleted)
+            await _notifications.NotifyBatchCompletedAsync(transfer.BatchId, new { BatchId = transfer.BatchId });
 
         return await MapToDto(transfer.Id);
     }
@@ -88,6 +175,14 @@ public class TransferService : ITransferService
     {
         var transfers = await _unitOfWork.TransferRequests.FindAsync(
             x => x.Status == TransferStatus.Pending,
+            new[] { "Batch", "FromWorkshop", "ToWorkshop" });
+        return transfers.Select(MapToDtoValue).ToList();
+    }
+
+    public async Task<IReadOnlyList<TransferRequestDto>> GetAwaitingReceiptByWorkshopAsync(int workshopId)
+    {
+        var transfers = await _unitOfWork.TransferRequests.FindAsync(
+            x => x.Status == TransferStatus.Approved && x.ToWorkshopId == workshopId,
             new[] { "Batch", "FromWorkshop", "ToWorkshop" });
         return transfers.Select(MapToDtoValue).ToList();
     }
@@ -104,6 +199,7 @@ public class TransferService : ITransferService
         t.Id, t.BatchId, t.Batch?.BatchNumber ?? "",
         t.FromWorkshopId, t.FromWorkshop?.Name ?? "",
         t.ToWorkshopId, t.ToWorkshop?.Name ?? "",
-        t.CreatedAt, t.ApprovedByLeadId, t.ApprovedAt, t.Status.ToString()
+        t.CreatedAt, t.CreatedByQCId, t.ApprovedByLeadId, t.ApprovedAt,
+        t.ConfirmedByQCId, t.ConfirmedAt, t.Status.ToString()
     );
 }

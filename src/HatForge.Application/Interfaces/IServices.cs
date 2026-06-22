@@ -24,9 +24,11 @@ public interface IWorkService
 
 public interface ITransferService
 {
-    Task<TransferRequestDto> CreateTransferRequestAsync(CreateTransferDto dto);
+    Task<TransferRequestDto> CreateTransferRequestAsync(CreateTransferDto dto, int qcId);
     Task<TransferRequestDto> ApproveTransferAsync(ApproveTransferDto dto, int leadId);
+    Task<TransferRequestDto> ConfirmReceiptAsync(ConfirmReceiptDto dto, int qcId);
     Task<IReadOnlyList<TransferRequestDto>> GetPendingTransfersAsync();
+    Task<IReadOnlyList<TransferRequestDto>> GetAwaitingReceiptByWorkshopAsync(int workshopId);
 }
 
 public interface IMaterialDeliveryService

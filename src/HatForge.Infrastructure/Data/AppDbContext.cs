@@ -118,6 +118,14 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.ApprovedByLeadId)
                 .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CreatedByQC)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByQCId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.ConfirmedByQC)
+                .WithMany()
+                .HasForeignKey(x => x.ConfirmedByQCId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<MaterialDelivery>(e =>

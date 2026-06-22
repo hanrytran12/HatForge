@@ -49,13 +49,35 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
-    public async Task NotifyTransferRequestedAsync(object payload) =>
-        await _hub.Clients.Group("leads").SendAsync("TransferRequested", payload);
+    public async Task NotifyTransferRequestedAsync(int leadId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group("leads").SendAsync("TransferRequested", payload),
+            _hub.Clients.Group($"user_{leadId}").SendAsync("TransferRequested", payload));
 
-    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload) =>
+        await SaveAsync(leadId, "TransferRequested",
+            "Yêu cầu duyệt chuyển lô",
+            "Một xưởng yêu cầu bạn xuống duyệt lại lô hàng trước khi chuyển.",
+            payload);
+    }
+
+    public async Task NotifyTransferApprovedAsync(int batchId, int toWorkshopId, object payload)
+    {
         await Task.WhenAll(
             _hub.Clients.Group($"workshop_{toWorkshopId}").SendAsync("TransferApproved", payload),
             _hub.Clients.Group($"batch_{batchId}").SendAsync("TransferApproved", payload));
+
+        var qcUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == toWorkshopId && x.Role == Domain.Enums.UserRole.QCWorkshop);
+
+        foreach (var qc in qcUsers)
+        {
+            await SaveAsync(qc.Id, "TransferApproved",
+                "Có lô hàng chờ bạn xác nhận nhận",
+                $"Lô hàng đã được duyệt và đang chờ xưởng của bạn xác nhận đã nhận được.",
+                payload);
+        }
+    }
 
     public async Task NotifyBatchCompletedAsync(int batchId, object payload) =>
         await Task.WhenAll(

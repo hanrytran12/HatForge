@@ -78,10 +78,10 @@ public class ValidatorTests
     }
 
     [Fact]
-    public void CreateTransfer_SameWorkshop_Invalid()
+    public void CreateTransfer_NoBatchId_Invalid()
     {
         var v = new CreateTransferValidator();
-        var result = v.TestValidate(new CreateTransferDto(1, 1, 1));
-        result.ShouldHaveValidationErrorFor(x => x.ToWorkshopId);
+        var result = v.TestValidate(new CreateTransferDto(0));
+        result.ShouldHaveValidationErrorFor(x => x.BatchId);
     }
 }

@@ -19,6 +19,9 @@ public class BatchWorkflowTests
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
+        // QC for the next workshop (workshop 2) who will confirm receipt
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 5, workshopId: 2));
+        await ctx.SaveChangesAsync();
         var notifications = new NoOpNotificationPublisher();
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
 
@@ -51,18 +54,22 @@ public class BatchWorkflowTests
         var approved = await workService.ApproveWorkAsync(work.Id, qcId: 3);
         Assert.Equal(nameof(WorkStatus.Approved), approved.Status);
 
-        // 5. Lead marks workshop 1 complete → batch ReadyForTransfer
-        var afterW1 = await batchService.MarkWorkshopCompletedAsync(batch.Id, 1);
-        Assert.Equal(nameof(BatchStatus.ReadyForTransfer), afterW1.Status);
-
-        // 6. Lead creates + approves transfer to workshop 2
+        // 5. QC of workshop 1 creates a transfer request → server auto-determines next workshop
         var transfer = await transferService.CreateTransferRequestAsync(
-            new CreateTransferDto(batch.Id, 1, 2));
+            new CreateTransferDto(batch.Id), qcId: 3);
+        Assert.Equal(nameof(TransferStatus.Pending), transfer.Status);
+
+        // 6. Lead approves the transfer
         var approvedTransfer = await transferService.ApproveTransferAsync(
             new ApproveTransferDto(transfer.Id), 1);
-        Assert.Equal(nameof(TransferStatus.Transferred), approvedTransfer.Status);
+        Assert.Equal(nameof(TransferStatus.Approved), approvedTransfer.Status);
 
-        // 7. Workshop 2 completes → batch Completed
+        // 7. QC of workshop 2 confirms receipt → workshop 1 marked completed
+        var received = await transferService.ConfirmReceiptAsync(
+            new ConfirmReceiptDto(transfer.Id), qcId: 5);
+        Assert.Equal(nameof(TransferStatus.Transferred), received.Status);
+
+        // 8. Workshop 2 (last in chain) completes → batch Completed
         var final = await batchService.MarkWorkshopCompletedAsync(batch.Id, 2);
         Assert.Equal(nameof(BatchStatus.Completed), final.Status);
         Assert.NotNull(final.CompletedAt);
