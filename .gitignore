@@ -15,15 +15,33 @@ obj/
 # Local secrets — không commit file này, tự tạo từ appsettings.json
 appsettings.Development.json
 
+# User secrets
+secrets.json
+
 # Uploads
 wwwroot/uploads/
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # NuGet
 *.nupkg
+*.snupkg
+packages/
+
+# dotnet tool manifest (local)
+.config/dotnet-tools.json
+
+# Test results & coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Publish output
+publish/
 
 # Internal planning docs
 BATCHFLOW_PROJECT_PLAN.md
