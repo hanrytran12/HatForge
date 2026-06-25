@@ -94,6 +94,31 @@ public class ConfirmMaterialRequestValidator : AbstractValidator<ConfirmMaterial
     }
 }
 
+public class CreateAdHocMaterialRequestValidator : AbstractValidator<CreateAdHocMaterialRequestDto>
+{
+    public CreateAdHocMaterialRequestValidator()
+    {
+        RuleFor(x => x.BatchId).GreaterThan(0);
+        RuleFor(x => x.WorkshopId).GreaterThan(0);
+        RuleFor(x => x.Reason)
+            .NotEmpty().WithMessage("Reason is required")
+            .MaximumLength(500);
+        RuleFor(x => x.Items)
+            .NotEmpty().WithMessage("At least one item must be requested");
+
+        RuleForEach(x => x.Items).ChildRules(i =>
+        {
+            i.RuleFor(x => x.MaterialName)
+                .NotEmpty().MaximumLength(256);
+            i.RuleFor(x => x.Unit)
+                .NotEmpty().MaximumLength(32);
+            i.RuleFor(x => x.RequestedQuantity)
+                .GreaterThan(0)
+                .WithMessage("Requested quantity must be greater than 0");
+        });
+    }
+}
+
 public class LoginValidator : AbstractValidator<LoginDto>
 {
     public LoginValidator()

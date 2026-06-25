@@ -238,6 +238,18 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
+    public async Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"user_{leadId}").SendAsync("AdHocMaterialRequest", payload),
+            _hub.Clients.Group("leads").SendAsync("AdHocMaterialRequest", payload));
+
+        await SaveAsync(leadId, "AdHocMaterialRequest",
+            "Yêu cầu bổ sung NVL",
+            $"QC yêu cầu bổ sung nguyên vật liệu cho lô hàng #{batchId}. Vui lòng duyệt và đi giao.",
+            payload);
+    }
+
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)
     {
         var notification = new Notification

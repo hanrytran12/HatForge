@@ -5,8 +5,9 @@ namespace HatForge.Domain.Entities;
 public class MaterialRequest
 {
     public int Id { get; set; }
-    public int OriginalDeliveryId { get; set; }
+    public int? OriginalDeliveryId { get; set; }
     public int BatchId { get; set; }
+    public int WorkshopId { get; set; }
     public MaterialRequestStatus Status { get; set; } = MaterialRequestStatus.Pending;
     public int CreatedByQCId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -15,9 +16,12 @@ public class MaterialRequest
     public int? FulfilledByQCId { get; set; }
     public DateTime? FulfilledAt { get; set; }
     public int Round { get; set; } = 1;
+    public bool IsAdHoc { get; set; }
+    public string? Reason { get; set; }
 
-    public MaterialDelivery OriginalDelivery { get; set; } = null!;
+    public MaterialDelivery? OriginalDelivery { get; set; }
     public Batch Batch { get; set; } = null!;
+    public Workshop Workshop { get; set; } = null!;
     public User CreatedByQC { get; set; } = null!;
     public User? ApprovedByLead { get; set; }
     public User? FulfilledByQC { get; set; }

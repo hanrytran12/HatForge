@@ -42,7 +42,10 @@ public static class TestDataFactory
     public static async Task SeedBaseAsync(AppDbContext ctx)
     {
         ctx.Users.AddRange(Lead(), Staff(), QcWorkshop(), Admin());
-        ctx.Workshops.AddRange(Workshop(1), Workshop(2));
+        ctx.Workshops.AddRange(
+            Workshop(1, requiresMaterials: false),
+            Workshop(2, requiresMaterials: false),
+            Workshop(3, requiresMaterials: true));
         ctx.HatModels.Add(HatModel());
         await ctx.SaveChangesAsync();
     }

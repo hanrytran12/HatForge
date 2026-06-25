@@ -29,6 +29,12 @@ public class MaterialRequestController : BaseApiController
     public async Task<ActionResult<ApiResponse<MaterialRequestDto>>> Approve(int id)
         => Success(await _materialRequestService.ApproveAsync(id, CurrentUserId));
 
+    [HttpPost("ad-hoc")]
+    [Authorize(Roles = nameof(UserRole.QCWorkshop))]
+    public async Task<ActionResult<ApiResponse<MaterialRequestDto>>> CreateAdHoc(
+        [FromBody] CreateAdHocMaterialRequestDto dto)
+        => Success(await _materialRequestService.CreateAdHocRequestAsync(dto, CurrentUserId));
+
     [HttpPut("{id:int}/confirm")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
     public async Task<ActionResult<ApiResponse<MaterialRequestDto>>> Confirm(

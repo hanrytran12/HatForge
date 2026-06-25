@@ -153,13 +153,19 @@ public class AppDbContext : DbContext
 
         b.Entity<MaterialRequest>(e =>
         {
+            e.Property(x => x.Reason).HasMaxLength(500);
             e.HasOne(x => x.OriginalDelivery)
                 .WithMany()
                 .HasForeignKey(x => x.OriginalDeliveryId)
+                .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Batch)
                 .WithMany()
                 .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Workshop)
+                .WithMany()
+                .HasForeignKey(x => x.WorkshopId)
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.CreatedByQC)
                 .WithMany()

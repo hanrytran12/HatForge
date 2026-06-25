@@ -18,6 +18,8 @@ public record MaterialRequestDto(
     string? FulfilledByQCName,
     DateTime? FulfilledAt,
     int Round,
+    bool IsAdHoc,
+    string? Reason,
     List<MaterialRequestItemDto> Items
 );
 
@@ -39,4 +41,17 @@ public record ConfirmMaterialRequestDto(
 public record ConfirmMaterialRequestItemDto(
     int ItemId,
     int ActualQuantity
+);
+
+public record CreateAdHocMaterialRequestDto(
+    int BatchId,
+    int WorkshopId,
+    string Reason,
+    List<CreateAdHocMaterialRequestItemDto> Items
+);
+
+public record CreateAdHocMaterialRequestItemDto(
+    string MaterialName,
+    string Unit,
+    int RequestedQuantity
 );

@@ -17,4 +17,5 @@ public interface INotificationPublisher
     Task NotifyMaterialShortfallAsync(int leadId, int batchId, int workshopId, object payload);
     Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload);
     Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload);
+    Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload);
 }
