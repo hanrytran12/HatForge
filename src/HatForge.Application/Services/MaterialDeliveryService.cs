@@ -10,11 +10,16 @@ public class MaterialDeliveryService : IMaterialDeliveryService
 {
     private readonly IUnitOfWork _unitOfWork;
     private readonly INotificationPublisher _notifications;
+    private readonly IMaterialRequestService _materialRequestService;
 
-    public MaterialDeliveryService(IUnitOfWork unitOfWork, INotificationPublisher notifications)
+    public MaterialDeliveryService(
+        IUnitOfWork unitOfWork,
+        INotificationPublisher notifications,
+        IMaterialRequestService materialRequestService)
     {
         _unitOfWork = unitOfWork;
         _notifications = notifications;
+        _materialRequestService = materialRequestService;
     }
 
     public async Task<IReadOnlyList<MaterialDeliveryDto>> GetPendingByWorkshopAsync(int workshopId)
@@ -91,6 +96,8 @@ public class MaterialDeliveryService : IMaterialDeliveryService
                 delivery.WorkshopId,
                 WorkshopName = delivery.Workshop?.Name
             });
+
+        await _materialRequestService.CreateRequestFromShortfallAsync(delivery.Id, qcId);
 
         return MapToDto(delivery);
     }

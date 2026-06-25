@@ -39,6 +39,15 @@ public interface IMaterialDeliveryService
     Task<MaterialDeliveryDto> ConfirmDeliveryAsync(ConfirmMaterialDeliveryDto dto, int qcId);
 }
 
+public interface IMaterialRequestService
+{
+    Task<MaterialRequestDto?> CreateRequestFromShortfallAsync(int deliveryId, int qcId);
+    Task<IReadOnlyList<MaterialRequestDto>> GetPendingForLeadAsync(int leadId);
+    Task<IReadOnlyList<MaterialRequestDto>> GetByBatchAsync(int batchId);
+    Task<MaterialRequestDto> ApproveAsync(int requestId, int leadId);
+    Task<MaterialRequestDto> ConfirmAsync(ConfirmMaterialRequestDto dto, int qcId);
+}
+
 public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginDto dto);

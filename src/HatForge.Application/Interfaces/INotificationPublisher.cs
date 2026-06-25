@@ -14,4 +14,7 @@ public interface INotificationPublisher
     Task NotifyWorkCanBeginAsync(int toWorkshopId, object payload);
     Task NotifyFinalReviewRequestedAsync(int leadId, object payload);
     Task NotifyGateQCReviewRequestedAsync(object payload);
+    Task NotifyMaterialShortfallAsync(int leadId, int batchId, int workshopId, object payload);
+    Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload);
+    Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload);
 }

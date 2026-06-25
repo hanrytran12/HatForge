@@ -77,6 +77,23 @@ public class CreateTransferValidator : AbstractValidator<CreateTransferDto>
     }
 }
 
+public class ConfirmMaterialRequestValidator : AbstractValidator<ConfirmMaterialRequestDto>
+{
+    public ConfirmMaterialRequestValidator()
+    {
+        RuleFor(x => x.RequestId).GreaterThan(0);
+        RuleFor(x => x.Items)
+            .NotEmpty().WithMessage("At least one item must be confirmed");
+
+        RuleForEach(x => x.Items).ChildRules(i =>
+        {
+            i.RuleFor(x => x.ItemId).GreaterThan(0);
+            i.RuleFor(x => x.ActualQuantity).GreaterThan(0)
+                .WithMessage("Actual quantity must be greater than 0");
+        });
+    }
+}
+
 public class LoginValidator : AbstractValidator<LoginDto>
 {
     public LoginValidator()

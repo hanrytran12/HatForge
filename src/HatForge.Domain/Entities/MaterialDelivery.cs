@@ -17,4 +17,5 @@ public class MaterialDelivery
     public Batch Batch { get; set; } = null!;
     public Workshop Workshop { get; set; } = null!;
     public ICollection<MaterialDeliveryItem> Items { get; set; } = new List<MaterialDeliveryItem>();
+    public ICollection<Domain.Entities.MaterialRequest> MaterialRequests { get; set; } = new List<Domain.Entities.MaterialRequest>();
 }
