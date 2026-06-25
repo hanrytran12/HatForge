@@ -137,6 +137,16 @@ public class MaterialRequestService : IMaterialRequestService
             throw new BusinessRuleException(
                 "Workshop is not part of this batch's production chain");
 
+        var openAdHoc = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
+            x => x.BatchId == dto.BatchId
+              && x.WorkshopId == dto.WorkshopId
+              && x.IsAdHoc
+              && (x.Status == MaterialRequestStatus.Pending
+                  || x.Status == MaterialRequestStatus.Approved));
+        if (openAdHoc != null)
+            throw new BusinessRuleException(
+                "An ad-hoc material request is already open for this workshop. Wait until it is fulfilled before creating a new one.");
+
         var request = new MaterialRequest
         {
             OriginalDeliveryId = null,

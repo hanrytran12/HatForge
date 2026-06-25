@@ -528,6 +528,51 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
+    public async Task CreateAdHoc_WhenOpenAdHocExists_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, workshopId: Workshop3Id);
+
+        var mrService = CreateService(ctx);
+        var first = await mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7);
+
+        // Same QC tries to create another ad-hoc while the first is still Pending
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7));
+
+        // Lead approves it — now it's Approved, still should block new requests
+        await mrService.ApproveAsync(first.Id, LeadId);
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7));
+    }
+
+    [Fact]
+    public async Task CreateAdHoc_AfterFulfilled_AllowsNewRequest()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, workshopId: Workshop3Id);
+
+        var mrService = CreateService(ctx);
+        var first = await mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7);
+        var approved = await mrService.ApproveAsync(first.Id, LeadId);
+        await mrService.ConfirmAsync(
+            new ConfirmMaterialRequestDto(approved.Id, new List<ConfirmMaterialRequestItemDto>
+            {
+                new(approved.Items[0].Id, 50)
+            }), qcId: 7);
+
+        // Now Fulfilled — a new ad-hoc request is allowed
+        var second = await mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7);
+        Assert.Equal(MaterialRequestStatus.Pending.ToString(), second.Status);
+    }
+
+    [Fact]
     public async Task CreateAdHoc_ThenApproveAndConfirm_CompletesFlow()
     {
         using var ctx = TestDataFactory.CreateContext();
