@@ -42,6 +42,7 @@ public interface IMaterialDeliveryService
 public interface IMaterialRequestService
 {
     Task<MaterialRequestDto?> CreateRequestFromShortfallAsync(int deliveryId, int qcId);
+    Task<MaterialRequestDto> CreateAdHocRequestAsync(CreateAdHocMaterialRequestDto dto, int qcId);
     Task<IReadOnlyList<MaterialRequestDto>> GetPendingForLeadAsync(int leadId);
     Task<IReadOnlyList<MaterialRequestDto>> GetByBatchAsync(int batchId);
     Task<MaterialRequestDto> ApproveAsync(int requestId, int leadId);

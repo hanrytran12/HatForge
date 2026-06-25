@@ -19,4 +19,5 @@ public class NoOpNotificationPublisher : INotificationPublisher
     public Task NotifyMaterialShortfallAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
 }

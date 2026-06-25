@@ -58,6 +58,7 @@ public class MaterialRequestService : IMaterialRequestService
         {
             OriginalDeliveryId = deliveryId,
             BatchId = delivery.BatchId,
+            WorkshopId = delivery.WorkshopId,
             Status = MaterialRequestStatus.Pending,
             CreatedByQCId = qcId,
             Round = round
@@ -100,11 +101,93 @@ public class MaterialRequestService : IMaterialRequestService
         return await MapToDtoAsync(request.Id);
     }
 
+    public async Task<MaterialRequestDto> CreateAdHocRequestAsync(CreateAdHocMaterialRequestDto dto, int qcId)
+    {
+        var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
+            ?? throw new NotFoundException("QC user not found");
+        if (qc.Role != UserRole.QCWorkshop)
+            throw new ForbiddenException("Only QC Workshop can create material requests");
+        if (qc.WorkshopId != dto.WorkshopId)
+            throw new ForbiddenException("You can only create material requests for your own workshop");
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(dto.BatchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        var allowedStatuses = new[]
+        {
+            BatchStatus.InProduction,
+            BatchStatus.UnderQCReview,
+            BatchStatus.ReadyForTransfer,
+            BatchStatus.PendingLeadReview
+        };
+        if (!allowedStatuses.Contains(batch.Status))
+            throw new BusinessRuleException(
+                $"Cannot create ad-hoc material request when batch is in {batch.Status} status");
+
+        var workshop = await _unitOfWork.Workshops.GetByIdAsync(dto.WorkshopId)
+            ?? throw new NotFoundException("Workshop not found");
+
+        var batchWorkshop = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
+            x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId);
+        if (batchWorkshop == null)
+            throw new BusinessRuleException(
+                "Workshop is not part of this batch's production chain");
+
+        var request = new MaterialRequest
+        {
+            OriginalDeliveryId = null,
+            BatchId = dto.BatchId,
+            WorkshopId = dto.WorkshopId,
+            Status = MaterialRequestStatus.Pending,
+            CreatedByQCId = qcId,
+            Round = 1,
+            IsAdHoc = true,
+            Reason = dto.Reason
+        };
+
+        await _unitOfWork.MaterialRequests.AddAsync(request);
+        await _unitOfWork.SaveChangesAsync();
+
+        foreach (var item in dto.Items)
+        {
+            await _unitOfWork.MaterialRequestItems.AddAsync(new MaterialRequestItem
+            {
+                MaterialRequestId = request.Id,
+                MaterialName = item.MaterialName,
+                Unit = item.Unit,
+                ShortfallQuantity = item.RequestedQuantity
+            });
+        }
+        await _unitOfWork.SaveChangesAsync();
+
+        if (batch.AssignedToLeadId is int leadId)
+        {
+            await _notifications.NotifyAdHocMaterialRequestAsync(
+                leadId, dto.BatchId, dto.WorkshopId, new
+                {
+                    RequestId = request.Id,
+                    BatchId = dto.BatchId,
+                    WorkshopId = dto.WorkshopId,
+                    WorkshopName = workshop.Name,
+                    Reason = dto.Reason,
+                    Round = 1,
+                    Items = dto.Items.Select(i => new
+                    {
+                        i.MaterialName,
+                        i.Unit,
+                        RequestedQuantity = i.RequestedQuantity
+                    }).ToList()
+                });
+        }
+
+        return await MapToDtoAsync(request.Id);
+    }
+
     public async Task<IReadOnlyList<MaterialRequestDto>> GetPendingForLeadAsync(int leadId)
     {
         var allRequests = await _unitOfWork.MaterialRequests.FindAsync(
             x => x.Status == MaterialRequestStatus.Pending,
-            new[] { "Batch", "OriginalDelivery.Workshop", "Items" });
+            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items" });
 
         var filtered = allRequests
             .Where(r => r.Batch?.AssignedToLeadId == leadId)
@@ -120,7 +203,7 @@ public class MaterialRequestService : IMaterialRequestService
     {
         var requests = await _unitOfWork.MaterialRequests.FindAsync(
             x => x.BatchId == batchId,
-            new[] { "Batch", "OriginalDelivery.Workshop", "Items" });
+            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items" });
 
         var results = new List<MaterialRequestDto>();
         foreach (var r in requests)
@@ -153,15 +236,20 @@ public class MaterialRequestService : IMaterialRequestService
         _unitOfWork.MaterialRequests.Update(request);
         await _unitOfWork.SaveChangesAsync();
 
-        var delivery = await _unitOfWork.MaterialDeliveries.GetByIdAsync(request.OriginalDeliveryId)
-            ?? throw new NotFoundException("Original delivery not found");
+        int notifyWorkshopId = request.WorkshopId;
+        if (request.OriginalDeliveryId is int deliveryId)
+        {
+            var delivery = await _unitOfWork.MaterialDeliveries.GetByIdAsync(deliveryId)
+                ?? throw new NotFoundException("Original delivery not found");
+            notifyWorkshopId = delivery.WorkshopId;
+        }
 
         await _notifications.NotifyMaterialRequestApprovedAsync(
-            request.BatchId, delivery.WorkshopId, new
+            request.BatchId, notifyWorkshopId, new
             {
                 RequestId = request.Id,
                 BatchId = request.BatchId,
-                WorkshopId = delivery.WorkshopId,
+                WorkshopId = notifyWorkshopId,
                 Round = request.Round
             });
 
@@ -184,10 +272,20 @@ public class MaterialRequestService : IMaterialRequestService
         if (request.Round >= MaxSupplementalRounds + 1)
             throw new BusinessRuleException($"Maximum supplemental rounds ({MaxSupplementalRounds}) reached");
 
-        var delivery = await _unitOfWork.MaterialDeliveries.GetByIdAsync(request.OriginalDeliveryId)
-            ?? throw new NotFoundException("Original delivery not found");
+        MaterialDelivery? delivery = null;
+        int targetWorkshopId;
+        if (request.OriginalDeliveryId is int deliveryId)
+        {
+            delivery = await _unitOfWork.MaterialDeliveries.GetByIdAsync(deliveryId)
+                ?? throw new NotFoundException("Original delivery not found");
+            targetWorkshopId = delivery.WorkshopId;
+        }
+        else
+        {
+            targetWorkshopId = request.WorkshopId;
+        }
 
-        if (qc.WorkshopId != delivery.WorkshopId)
+        if (qc.WorkshopId != targetWorkshopId)
             throw new ForbiddenException("You can only confirm material requests for your own workshop");
 
         var items = await _unitOfWork.MaterialRequestItems.FindAsync(
@@ -227,11 +325,14 @@ public class MaterialRequestService : IMaterialRequestService
 
             nextRequest = new MaterialRequest
             {
-                OriginalDeliveryId = delivery.Id,
-                BatchId = delivery.BatchId,
+                OriginalDeliveryId = request.OriginalDeliveryId,
+                BatchId = request.BatchId,
+                WorkshopId = request.WorkshopId,
                 Status = MaterialRequestStatus.Pending,
                 CreatedByQCId = qcId,
-                Round = request.Round + 1
+                Round = request.Round + 1,
+                IsAdHoc = request.IsAdHoc,
+                Reason = request.Reason
             };
             await _unitOfWork.MaterialRequests.AddAsync(nextRequest);
             await _unitOfWork.SaveChangesAsync();
@@ -254,11 +355,11 @@ public class MaterialRequestService : IMaterialRequestService
         if (batch?.AssignedToLeadId is int leadId)
         {
             await _notifications.NotifyMaterialRequestFulfilledAsync(
-                leadId, request.BatchId, delivery.WorkshopId, new
+                leadId, request.BatchId, targetWorkshopId, new
                 {
                     RequestId = request.Id,
                     BatchId = request.BatchId,
-                    WorkshopId = delivery.WorkshopId,
+                    WorkshopId = targetWorkshopId,
                     Round = request.Round,
                     NewRequestId = nextRequest?.Id
                 });
@@ -266,11 +367,11 @@ public class MaterialRequestService : IMaterialRequestService
             if (nextRequest != null)
             {
                 await _notifications.NotifyMaterialShortfallAsync(
-                    leadId, request.BatchId, delivery.WorkshopId, new
+                    leadId, request.BatchId, targetWorkshopId, new
                     {
                         RequestId = nextRequest.Id,
                         BatchId = request.BatchId,
-                        WorkshopId = delivery.WorkshopId,
+                        WorkshopId = targetWorkshopId,
                         Round = nextRequest.Round,
                         Items = stillShort.Select(s => new
                         {
@@ -290,18 +391,18 @@ public class MaterialRequestService : IMaterialRequestService
     {
         var r = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
             x => x.Id == id,
-            new[] { "Batch", "OriginalDelivery.Workshop", "Items", "CreatedByQC", "ApprovedByLead", "FulfilledByQC" })
+            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "FulfilledByQC" })
             ?? throw new NotFoundException("Material request not found");
         return MapToDtoValue(r);
     }
 
     private static MaterialRequestDto MapToDtoValue(MaterialRequest r) => new(
         r.Id,
-        r.OriginalDeliveryId,
+        r.OriginalDeliveryId ?? 0,
         r.BatchId,
         r.Batch?.BatchNumber ?? "",
-        r.OriginalDelivery?.WorkshopId ?? 0,
-        r.OriginalDelivery?.Workshop?.Name ?? "",
+        r.OriginalDelivery?.WorkshopId ?? r.WorkshopId,
+        r.OriginalDelivery?.Workshop?.Name ?? r.Workshop?.Name ?? "",
         r.Status.ToString(),
         r.CreatedByQCId,
         r.CreatedByQC?.Name ?? "",
@@ -313,6 +414,8 @@ public class MaterialRequestService : IMaterialRequestService
         r.FulfilledByQC?.Name,
         r.FulfilledAt,
         r.Round,
+        r.IsAdHoc,
+        r.Reason,
         r.Items
             .OrderBy(i => i.Id)
             .Select(i => new MaterialRequestItemDto(
