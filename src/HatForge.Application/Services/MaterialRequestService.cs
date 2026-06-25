@@ -127,6 +127,10 @@ public class MaterialRequestService : IMaterialRequestService
         var workshop = await _unitOfWork.Workshops.GetByIdAsync(dto.WorkshopId)
             ?? throw new NotFoundException("Workshop not found");
 
+        if (!workshop.RequiresMaterials)
+            throw new BusinessRuleException(
+                "Cannot create material request for a workshop that does not require materials");
+
         var batchWorkshop = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
             x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId);
         if (batchWorkshop == null)

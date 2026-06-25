@@ -18,6 +18,12 @@ public class MaterialRequestServiceTests
     private const int QcIdWorkshop2 = 5;
     private const int Workshop1Id = 1;
     private const int Workshop2Id = 2;
+    private const int Workshop3Id = 3;
+
+    public static IEnumerable<object[]> SeedBaseData() => new List<object[]>
+    {
+        new object[] { 1, 2, 3, 1 }
+    };
 
     private static MaterialRequestService CreateService(AppDbContext ctx)
         => new(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
@@ -402,7 +408,8 @@ public class MaterialRequestServiceTests
         AppDbContext ctx,
         BatchStatus status = BatchStatus.InProduction,
         int workshopId = Workshop1Id,
-        int leadId = LeadId)
+        int leadId = LeadId,
+        bool requiresMaterials = true)
     {
         var batch = new Batch
         {
@@ -417,15 +424,14 @@ public class MaterialRequestServiceTests
         ctx.BatchWorkshops.Add(new BatchWorkshop
         {
             BatchId = batch.Id, WorkshopId = workshopId, OrderIndex = 0,
-            RequiresMaterials = true, MaterialsReceived = true, IsCompleted = false,
+            RequiresMaterials = requiresMaterials, MaterialsReceived = true, IsCompleted = false,
             StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10)
         });
         await ctx.SaveChangesAsync();
         return batch.Id;
     }
-
     private static CreateAdHocMaterialRequestDto BuildAdHoc(
-        int batchId, int workshopId = Workshop1Id)
+        int batchId, int workshopId = Workshop3Id)
         => new(batchId, workshopId, "Hao hụt khi cắt vải",
             new List<CreateAdHocMaterialRequestItemDto>
             {
@@ -437,17 +443,20 @@ public class MaterialRequestServiceTests
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
-        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        // Add QC for workshop 3 (the materials-requiring workshop)
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, workshopId: Workshop3Id);
 
         var result = await CreateService(ctx).CreateAdHocRequestAsync(
-            BuildAdHoc(batchId), QcId);
+            BuildAdHoc(batchId, Workshop3Id), qcId: 7);
 
         Assert.Equal(nameof(MaterialRequestStatus.Pending), result.Status);
         Assert.True(result.IsAdHoc);
         Assert.Equal("Hao hụt khi cắt vải", result.Reason);
         Assert.Equal(1, result.Round);
         Assert.Equal(0, result.OriginalDeliveryId);
-        Assert.Equal(Workshop1Id, result.WorkshopId);
+        Assert.Equal(Workshop3Id, result.WorkshopId);
         Assert.Single(result.Items);
         Assert.Equal("Wool Felt", result.Items[0].MaterialName);
         Assert.Equal(50, result.Items[0].ShortfallQuantity);
@@ -483,10 +492,24 @@ public class MaterialRequestServiceTests
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
-        var batchId = await SeedBatchWithWorkshopAsync(ctx, status: BatchStatus.Completed);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, status: BatchStatus.Completed, workshopId: Workshop3Id);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            CreateService(ctx).CreateAdHocRequestAsync(BuildAdHoc(batchId), QcId));
+            CreateService(ctx).CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7));
+    }
+
+    [Fact]
+    public async Task CreateAdHoc_WorkshopDoesNotRequireMaterials_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        // Workshop 1 is seeded with RequiresMaterials=false; QC of workshop 1 attempts to create a request
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, workshopId: Workshop1Id, requiresMaterials: false);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop1Id), QcId));
     }
 
     [Fact]
@@ -509,10 +532,12 @@ public class MaterialRequestServiceTests
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
-        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, workshopId: Workshop3Id);
 
         var mrService = CreateService(ctx);
-        var created = await mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId), QcId);
+        var created = await mrService.CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7);
 
         var approved = await mrService.ApproveAsync(created.Id, LeadId);
         Assert.Equal(nameof(MaterialRequestStatus.Approved), approved.Status);
@@ -521,7 +546,7 @@ public class MaterialRequestServiceTests
             new ConfirmMaterialRequestDto(approved.Id, new List<ConfirmMaterialRequestItemDto>
             {
                 new(approved.Items[0].Id, 50)
-            }), QcId);
+            }), qcId: 7);
 
         Assert.Equal(nameof(MaterialRequestStatus.Fulfilled), fulfilled.Status);
         Assert.True(fulfilled.IsAdHoc);
