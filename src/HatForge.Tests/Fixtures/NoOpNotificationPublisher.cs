@@ -16,4 +16,7 @@ public class NoOpNotificationPublisher : INotificationPublisher
     public Task NotifyWorkCanBeginAsync(int toWorkshopId, object payload) => Task.CompletedTask;
     public Task NotifyFinalReviewRequestedAsync(int leadId, object payload) => Task.CompletedTask;
     public Task NotifyGateQCReviewRequestedAsync(object payload) => Task.CompletedTask;
+    public Task NotifyMaterialShortfallAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
 }

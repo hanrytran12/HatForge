@@ -3,6 +3,7 @@ using System;
 using HatForge.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HatForge.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260624123140_AddMaterialRequests")]
+    partial class AddMaterialRequests
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -236,9 +239,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int?>("FulfilledByQCId")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("MaterialDeliveryId")
-                        .HasColumnType("integer");
-
                     b.Property<int>("OriginalDeliveryId")
                         .HasColumnType("integer");
 
@@ -257,8 +257,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.HasIndex("CreatedByQCId");
 
                     b.HasIndex("FulfilledByQCId");
-
-                    b.HasIndex("MaterialDeliveryId");
 
                     b.HasIndex("OriginalDeliveryId");
 
@@ -616,17 +614,13 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.HasOne("HatForge.Domain.Entities.User", "CreatedByQC")
                         .WithMany()
                         .HasForeignKey("CreatedByQCId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.SetNull)
                         .IsRequired();
 
                     b.HasOne("HatForge.Domain.Entities.User", "FulfilledByQC")
                         .WithMany()
                         .HasForeignKey("FulfilledByQCId")
                         .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("HatForge.Domain.Entities.MaterialDelivery", null)
-                        .WithMany("MaterialRequests")
-                        .HasForeignKey("MaterialDeliveryId");
 
                     b.HasOne("HatForge.Domain.Entities.MaterialDelivery", "OriginalDelivery")
                         .WithMany()
@@ -787,8 +781,6 @@ namespace HatForge.Infrastructure.Data.Migrations
             modelBuilder.Entity("HatForge.Domain.Entities.MaterialDelivery", b =>
                 {
                     b.Navigation("Items");
-
-                    b.Navigation("MaterialRequests");
                 });
 
             modelBuilder.Entity("HatForge.Domain.Entities.MaterialRequest", b =>

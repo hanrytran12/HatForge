@@ -196,6 +196,48 @@ public class SignalRNotificationPublisher : INotificationPublisher
         }
     }
 
+    public async Task NotifyMaterialShortfallAsync(int leadId, int batchId, int workshopId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"user_{leadId}").SendAsync("MaterialShortfall", payload),
+            _hub.Clients.Group("leads").SendAsync("MaterialShortfall", payload));
+
+        await SaveAsync(leadId, "MaterialShortfall",
+            "Material shortfall reported",
+            $"Batch #{batchId} has a material shortfall. Please review and approve a top-up request.",
+            payload);
+    }
+
+    public async Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialRequestApproved", payload),
+            _hub.Clients.Group($"batch_{batchId}").SendAsync("MaterialRequestApproved", payload));
+
+        var qcUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == workshopId && x.Role == Domain.Enums.UserRole.QCWorkshop);
+
+        foreach (var qc in qcUsers)
+        {
+            await SaveAsync(qc.Id, "MaterialRequestApproved",
+                "Top-up request approved",
+                $"Lead has approved a material top-up. Please confirm receipt when materials arrive.",
+                payload);
+        }
+    }
+
+    public async Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"user_{leadId}").SendAsync("MaterialRequestFulfilled", payload),
+            _hub.Clients.Group("leads").SendAsync("MaterialRequestFulfilled", payload));
+
+        await SaveAsync(leadId, "MaterialRequestFulfilled",
+            "Top-up delivery confirmed",
+            $"Workshop has confirmed receipt of top-up materials for batch #{batchId}.",
+            payload);
+    }
+
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)
     {
         var notification = new Notification

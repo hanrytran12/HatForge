@@ -17,6 +17,8 @@ public class AppDbContext : DbContext
     public DbSet<TransferRequest> TransferRequests => Set<TransferRequest>();
     public DbSet<MaterialDelivery> MaterialDeliveries => Set<MaterialDelivery>();
     public DbSet<MaterialDeliveryItem> MaterialDeliveryItems => Set<MaterialDeliveryItem>();
+    public DbSet<MaterialRequest> MaterialRequests => Set<MaterialRequest>();
+    public DbSet<MaterialRequestItem> MaterialRequestItems => Set<MaterialRequestItem>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -147,6 +149,40 @@ public class AppDbContext : DbContext
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.MaterialDeliveryId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<MaterialRequest>(e =>
+        {
+            e.HasOne(x => x.OriginalDelivery)
+                .WithMany()
+                .HasForeignKey(x => x.OriginalDeliveryId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Batch)
+                .WithMany()
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.CreatedByQC)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByQCId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ApprovedByLead)
+                .WithMany()
+                .HasForeignKey(x => x.ApprovedByLeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.FulfilledByQC)
+                .WithMany()
+                .HasForeignKey(x => x.FulfilledByQCId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<MaterialRequestItem>(e =>
+        {
+            e.Property(x => x.MaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Unit).IsRequired().HasMaxLength(32);
+            e.HasOne(x => x.MaterialRequest)
+                .WithMany(x => x.Items)
+                .HasForeignKey(x => x.MaterialRequestId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         b.Entity<Notification>(e =>
