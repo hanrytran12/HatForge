@@ -27,7 +27,8 @@ public record WorkshopInBatchDto(
     DateTime EndDate,
     decimal InitialMaterialQty,
     decimal MaterialUsed,
-    decimal MaterialRemaining
+    decimal MaterialRemaining,
+    decimal EstimatedMetersPerUnit
 );
 
 public record CreateBatchDto(
@@ -47,7 +48,8 @@ public record WorkshopPlanItemDto(
     DateTime StartDate,
     DateTime EndDate,
     DateTime? MaterialDeliveryDate,          // required when RequiresMaterials = true
-    List<MaterialItemDto>? MaterialItems     // required when RequiresMaterials = true
+    List<MaterialItemDto>? MaterialItems,    // required when RequiresMaterials = true
+    decimal EstimatedMetersPerUnit = 0m     // required (>0) when RequiresMaterials = true
 );
 
 public record MaterialItemDto(

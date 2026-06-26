@@ -108,6 +108,11 @@ public class BatchService : IBatchService
             if (item.RequiresMaterials && (item.MaterialItems == null || item.MaterialItems.Count == 0))
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — at least one material item must be provided");
+
+            if (item.RequiresMaterials && item.EstimatedMetersPerUnit <= 0)
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId} requires materials — EstimatedMetersPerUnit must be greater than 0");
+
             if (item.EndDate.Date <= item.StartDate.Date)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: end date must be after start date");
@@ -142,7 +147,8 @@ public class BatchService : IBatchService
                 MaterialsReceived = false,
                 IsCompleted = false,
                 StartDate = item.StartDate,
-                EndDate = item.EndDate
+                EndDate = item.EndDate,
+                EstimatedMetersPerUnit = item.RequiresMaterials ? item.EstimatedMetersPerUnit : 0m
             };
             await _unitOfWork.BatchWorkshops.AddAsync(bw);
 
@@ -341,7 +347,8 @@ public class BatchService : IBatchService
                 x.RequiresMaterials, x.MaterialsReceived, x.IsCompleted,
                 x.StartDate, x.EndDate,
                 x.InitialMaterialQty, x.MaterialUsed,
-                x.InitialMaterialQty - x.MaterialUsed))
+                x.InitialMaterialQty - x.MaterialUsed,
+                x.EstimatedMetersPerUnit))
             .ToList() ?? new()
     );
 

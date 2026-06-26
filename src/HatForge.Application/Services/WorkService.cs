@@ -52,6 +52,15 @@ public class WorkService : IWorkService
         if (workshopBw.RequiresMaterials && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed <= 0)
             throw new BusinessRuleException("Không có đủ nguyên vật liệu để làm việc");
 
+        var estimatedUsage = workshopBw.RequiresMaterials
+            ? dto.Quantity * workshopBw.EstimatedMetersPerUnit
+            : 0m;
+
+        if (workshopBw.RequiresMaterials
+            && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed < estimatedUsage)
+            throw new BusinessRuleException(
+                $"Không đủ nguyên vật liệu. Cần {estimatedUsage}m nhưng chỉ còn {workshopBw.InitialMaterialQty - workshopBw.MaterialUsed}m");
+
         // Workshops after the first in the chain must wait for a transfer from the previous workshop
         if (workshopBw.OrderIndex > 0)
         {
@@ -87,13 +96,20 @@ public class WorkService : IWorkService
             WorkshopId = dto.WorkshopId,
             StaffId = staffId,
             Quantity = dto.Quantity,
-            Status = WorkStatus.Submitted
+            Status = WorkStatus.Submitted,
+            EstimatedMaterialUsed = estimatedUsage
         };
 
         await _unitOfWork.Works.AddAsync(work);
 
         batch.Status = BatchStatus.UnderQCReview;
         _unitOfWork.Batches.Update(batch);
+
+        if (workshopBw.RequiresMaterials && estimatedUsage > 0)
+        {
+            workshopBw.MaterialUsed += estimatedUsage;
+            _unitOfWork.BatchWorkshops.Update(workshopBw);
+        }
 
         await _unitOfWork.SaveChangesAsync();
 
@@ -139,7 +155,10 @@ public class WorkService : IWorkService
             x => x.BatchId == work.BatchId && x.WorkshopId == work.WorkshopId);
         if (bw != null)
         {
-            bw.MaterialUsed += dto.ActualMaterialUsed;
+            // Reconcile: refund the pre-charged estimate, then add QC-confirmed actual.
+            var estimate = work.EstimatedMaterialUsed ?? 0m;
+            bw.MaterialUsed = bw.MaterialUsed - estimate + dto.ActualMaterialUsed;
+            if (bw.MaterialUsed < 0) bw.MaterialUsed = 0;
             _unitOfWork.BatchWorkshops.Update(bw);
             remainingAfter = bw.InitialMaterialQty - bw.MaterialUsed;
         }
@@ -238,6 +257,7 @@ public class WorkService : IWorkService
         w.SubmittedDate, w.Status.ToString(),
         w.RejectionNotes,
         w.ReviewedByQCId, w.ReviewedAt,
-        w.ActualMaterialUsed
+        w.ActualMaterialUsed,
+        w.EstimatedMaterialUsed
     );
 }

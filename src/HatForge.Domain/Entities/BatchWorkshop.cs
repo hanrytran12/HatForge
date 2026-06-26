@@ -13,6 +13,7 @@ public class BatchWorkshop
     public DateTime EndDate { get; set; }
     public decimal InitialMaterialQty { get; set; }
     public decimal MaterialUsed { get; set; }
+    public decimal EstimatedMetersPerUnit { get; set; }
 
     public Batch Batch { get; set; } = null!;
     public Workshop Workshop { get; set; } = null!;

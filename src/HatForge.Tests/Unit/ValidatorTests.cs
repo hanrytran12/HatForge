@@ -48,7 +48,8 @@ public class ValidatorTests
     {
         var v = new PlanBatchValidator();
         var item = new WorkshopPlanItemDto(1, 0, true, Start, End, Start.AddDays(-1),
-            new List<MaterialItemDto> { new("Wool Felt", 500) });
+            new List<MaterialItemDto> { new("Wool Felt", 500) },
+            EstimatedMetersPerUnit: 2m);
         var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
         result.ShouldNotHaveAnyValidationErrors();
     }

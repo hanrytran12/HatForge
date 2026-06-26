@@ -15,7 +15,8 @@ public record WorkDto(
     string? RejectionNotes,
     int? ReviewedByQCId,
     DateTime? ReviewedAt,
-    decimal? ActualMaterialUsed
+    decimal? ActualMaterialUsed,
+    decimal? EstimatedMaterialUsed
 );
 
 public record SubmitWorkDto(int BatchId, int WorkshopId, int Quantity, List<string> PhotoUrls);

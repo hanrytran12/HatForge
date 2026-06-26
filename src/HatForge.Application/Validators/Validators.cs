@@ -38,6 +38,9 @@ public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
                     .NotNull().WithMessage("MaterialDeliveryDate is required when workshop requires materials");
                 w.RuleFor(x => x.MaterialItems)
                     .NotEmpty().WithMessage("At least one material item is required when workshop requires materials");
+                w.RuleFor(x => x.EstimatedMetersPerUnit)
+                    .GreaterThan(0)
+                    .WithMessage("EstimatedMetersPerUnit must be greater than 0 when workshop requires materials");
                 w.RuleForEach(x => x.MaterialItems).ChildRules(m =>
                 {
                     m.RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(256);

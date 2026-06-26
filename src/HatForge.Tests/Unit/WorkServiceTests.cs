@@ -13,7 +13,10 @@ public class WorkServiceTests
     private static async Task<int> SeedBatchWithWorkshopAsync(
         HatForge.Infrastructure.Data.AppDbContext ctx,
         bool requiresMaterials = false,
-        bool materialsReceived = false)
+        bool materialsReceived = false,
+        decimal initialMaterialQty = 0m,
+        decimal materialUsed = 0m,
+        decimal estimatedMetersPerUnit = 0m)
     {
         var batch = new Batch
         {
@@ -28,7 +31,10 @@ public class WorkServiceTests
         {
             BatchId = batch.Id, WorkshopId = 1, OrderIndex = 0,
             RequiresMaterials = requiresMaterials, MaterialsReceived = materialsReceived,
-            StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10)
+            StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10),
+            InitialMaterialQty = initialMaterialQty,
+            MaterialUsed = materialUsed,
+            EstimatedMetersPerUnit = estimatedMetersPerUnit
         });
         await ctx.SaveChangesAsync();
         return batch.Id;
@@ -116,6 +122,90 @@ public class WorkServiceTests
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
             service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+    }
+
+    [Fact]
+    public async Task SubmitWork_WithMaterials_DeductsEstimatedUsageImmediately()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2.5m);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        var result = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        Assert.Equal(25m, bw.MaterialUsed);
+        Assert.Equal(25m, result.EstimatedMaterialUsed);
+    }
+
+    [Fact]
+    public async Task SubmitWork_WithInsufficientEstimatedMaterials_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 20m,
+            estimatedMetersPerUnit: 2.5m);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+    }
+
+    [Fact]
+    public async Task RejectWork_WithMaterials_DoesNotRefundEstimatedUsage()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2m);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", new List<string>()), qcId: 3);
+
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        Assert.Equal(20m, bw.MaterialUsed);
+    }
+
+    [Fact]
+    public async Task ApproveWork_WithMaterials_ReconcilesEstimateToActualUsage()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2m);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 15m, null), qcId: 3);
+
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        Assert.Equal(15m, bw.MaterialUsed);
     }
 
     [Fact]
