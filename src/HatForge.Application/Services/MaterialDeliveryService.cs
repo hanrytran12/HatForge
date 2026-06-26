@@ -82,6 +82,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         if (bw != null)
         {
             bw.MaterialsReceived = true;
+            bw.InitialMaterialQty = delivery.Items.Sum(i => (decimal)i.ActualQuantity);
             _unitOfWork.BatchWorkshops.Update(bw);
         }
 

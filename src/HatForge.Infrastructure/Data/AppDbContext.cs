@@ -62,6 +62,8 @@ public class AppDbContext : DbContext
         b.Entity<BatchWorkshop>(e =>
         {
             e.HasIndex(x => new { x.BatchId, x.WorkshopId }).IsUnique();
+            e.Property(x => x.InitialMaterialQty).HasPrecision(18, 2);
+            e.Property(x => x.MaterialUsed).HasPrecision(18, 2);
             e.HasOne(x => x.Batch)
                 .WithMany(x => x.BatchWorkshops)
                 .HasForeignKey(x => x.BatchId)
@@ -75,6 +77,7 @@ public class AppDbContext : DbContext
         b.Entity<Work>(e =>
         {
             e.Property(x => x.RejectionNotes).HasMaxLength(500);
+            e.Property(x => x.ActualMaterialUsed).HasPrecision(18, 2);
             e.HasOne(x => x.Batch)
                 .WithMany(x => x.Works)
                 .HasForeignKey(x => x.BatchId)

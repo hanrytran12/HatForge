@@ -172,7 +172,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.ApproveWorkAsync(work.Id, qcId: 3);
+        var result = await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Approved), result.Status);
         Assert.Equal(3, result.ReviewedByQCId);
@@ -204,8 +204,8 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.ApproveWorkAsync(work.Id, qcId: 3);
+        await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
 
-        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ApproveWorkAsync(work.Id, qcId: 3));
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3));
     }
 }

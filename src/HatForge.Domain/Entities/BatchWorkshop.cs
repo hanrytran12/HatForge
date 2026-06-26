@@ -11,6 +11,8 @@ public class BatchWorkshop
     public bool IsCompleted { get; set; }
     public DateTime StartDate { get; set; }
     public DateTime EndDate { get; set; }
+    public decimal InitialMaterialQty { get; set; }
+    public decimal MaterialUsed { get; set; }
 
     public Batch Batch { get; set; } = null!;
     public Workshop Workshop { get; set; } = null!;

@@ -18,7 +18,7 @@ public interface IBatchService
 public interface IWorkService
 {
     Task<WorkDto> SubmitWorkAsync(SubmitWorkDto dto, int staffId);
-    Task<WorkDto> ApproveWorkAsync(int workId, int qcId);
+    Task<WorkDto> ApproveWorkAsync(ApproveWorkDto dto, int qcId);
     Task<WorkDto> RejectWorkAsync(RejectWorkDto dto, int qcId);
     Task<IReadOnlyList<WorkDto>> GetWorksByBatchAsync(int batchId);
     Task<IReadOnlyList<WorkDto>> GetWorksByBatchAndWorkshopAsync(int batchId, int workshopId);

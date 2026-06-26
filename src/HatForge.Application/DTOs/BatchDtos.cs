@@ -24,7 +24,10 @@ public record WorkshopInBatchDto(
     bool MaterialsReceived,
     bool IsCompleted,
     DateTime StartDate,
-    DateTime EndDate
+    DateTime EndDate,
+    decimal InitialMaterialQty,
+    decimal MaterialUsed,
+    decimal MaterialRemaining
 );
 
 public record CreateBatchDto(

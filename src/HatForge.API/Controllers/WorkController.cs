@@ -45,7 +45,7 @@ public class WorkController : BaseApiController
     [HttpPut("approve")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
     public async Task<ActionResult<ApiResponse<WorkDto>>> Approve([FromBody] ApproveWorkDto dto)
-        => Success(await _workService.ApproveWorkAsync(dto.WorkId, CurrentUserId));
+        => Success(await _workService.ApproveWorkAsync(dto, CurrentUserId));
 
     [HttpPut("reject")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]

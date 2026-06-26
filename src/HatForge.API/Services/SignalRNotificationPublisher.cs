@@ -250,6 +250,30 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
+    public async Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, int leadId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialLowAlert", payload),
+            _hub.Clients.Group($"user_{leadId}").SendAsync("MaterialLowAlert", payload),
+            _hub.Clients.Group("leads").SendAsync("MaterialLowAlert", payload));
+
+        var qcUsers = await _unitOfWork.Users.FindAsync(
+            x => x.WorkshopId == workshopId && x.Role == Domain.Enums.UserRole.QCWorkshop);
+
+        foreach (var qc in qcUsers)
+        {
+            await SaveAsync(qc.Id, "MaterialLowAlert",
+                "Sắp hết vải — cần tạo yêu cầu bổ sung",
+                $"Lô hàng #{batchId} tại xưởng của bạn sắp hết vải. Vui lòng tạo Material Request bổ sung.",
+                payload);
+        }
+
+        await SaveAsync(leadId, "MaterialLowAlert",
+            "Sắp hết vải tại xưởng",
+            $"Lô hàng #{batchId} tại xưởng #{workshopId} sắp hết vải.",
+            payload);
+    }
+
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)
     {
         var notification = new Notification

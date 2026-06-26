@@ -339,7 +339,9 @@ public class BatchService : IBatchService
             .Select(x => new WorkshopInBatchDto(
                 x.WorkshopId, x.Workshop?.Name ?? "", x.OrderIndex,
                 x.RequiresMaterials, x.MaterialsReceived, x.IsCompleted,
-                x.StartDate, x.EndDate))
+                x.StartDate, x.EndDate,
+                x.InitialMaterialQty, x.MaterialUsed,
+                x.InitialMaterialQty - x.MaterialUsed))
             .ToList() ?? new()
     );
 

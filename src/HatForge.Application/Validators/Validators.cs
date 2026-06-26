@@ -69,6 +69,17 @@ public class RejectWorkValidator : AbstractValidator<RejectWorkDto>
     }
 }
 
+public class ApproveWorkValidator : AbstractValidator<ApproveWorkDto>
+{
+    public ApproveWorkValidator()
+    {
+        RuleFor(x => x.WorkId).GreaterThan(0);
+        RuleFor(x => x.ActualMaterialUsed)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("ActualMaterialUsed must be greater than or equal to 0");
+    }
+}
+
 public class CreateTransferValidator : AbstractValidator<CreateTransferDto>
 {
     public CreateTransferValidator()
