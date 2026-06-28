@@ -180,7 +180,7 @@ public class WorkServiceTests
 
         var work = await service.SubmitWorkAsync(
             new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 20m, new List<string>()), qcId: 3);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", true, 20m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(20m, bw.MaterialUsed);
@@ -202,11 +202,12 @@ public class WorkServiceTests
 
         var work = await service.SubmitWorkAsync(
             new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 12m, new List<string>()), qcId: 3);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", true, 12m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(12m, bw.MaterialUsed);
         Assert.Equal(12m, result.ActualMaterialUsed);
+        Assert.True(result.RejectionCanBeReworked);
     }
 
     [Fact]
@@ -316,7 +317,7 @@ public class WorkServiceTests
 
         var work = await service.SubmitWorkAsync(
             new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", 10m, new List<string>()), qcId: 3);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", false, 10m, new List<string>()), qcId: 3);
 
         var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
         Assert.Equal(0m, payload.MaterialRemaining);
@@ -393,7 +394,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0m, new List<string>()), qcId: 3);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", true, 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), result.Status);
         Assert.Equal("Loose stitching", result.RejectionNotes);

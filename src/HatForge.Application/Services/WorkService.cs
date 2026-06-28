@@ -148,6 +148,7 @@ public class WorkService : IWorkService
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
         work.ActualMaterialUsed = dto.ActualMaterialUsed;
+        work.RejectionCanBeReworked = null;
         _unitOfWork.Works.Update(work);
 
         var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
@@ -177,6 +178,7 @@ public class WorkService : IWorkService
 
         work.Status = WorkStatus.Rejected;
         work.RejectionNotes = dto.RejectionNotes;
+        work.RejectionCanBeReworked = dto.CanBeReworked;
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
         work.ActualMaterialUsed = dto.ActualMaterialUsed;
@@ -198,7 +200,11 @@ public class WorkService : IWorkService
 
         await _unitOfWork.SaveChangesAsync();
 
-        await _notifications.NotifyWorkRejectedAsync(work.BatchId, work.StaffId, new { WorkId = work.Id });
+        await _notifications.NotifyWorkRejectedAsync(work.BatchId, work.StaffId, new
+        {
+            WorkId = work.Id,
+            dto.CanBeReworked
+        });
 
         if (remainingAfter.HasValue)
             await NotifyMaterialLowIfNeededAsync(work.BatchId, work.WorkshopId, remainingAfter.Value);
@@ -310,6 +316,7 @@ public class WorkService : IWorkService
         w.Photos.Where(p => p.Type == WorkPhotoType.Rejection).Select(p => p.PhotoUrl).ToList(),
         w.SubmittedDate, w.Status.ToString(),
         w.RejectionNotes,
+        w.RejectionCanBeReworked,
         w.ReviewedByQCId, w.ReviewedAt,
         w.ActualMaterialUsed,
         w.EstimatedMaterialUsed

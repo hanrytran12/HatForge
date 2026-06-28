@@ -66,6 +66,35 @@ public class TransferServiceTests
     }
 
     [Fact]
+    public async Task CreateTransfer_IncludesUnrepairableRejectedWorkInQualityIssues()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedChainAsync(ctx, firstCompleted: false);
+        ctx.Works.Add(new Work
+        {
+            BatchId = batchId,
+            WorkshopId = 1,
+            StaffId = 2,
+            Quantity = 3,
+            Status = WorkStatus.Rejected,
+            RejectionNotes = "Không thể sửa đường may bị lệch",
+            RejectionCanBeReworked = false,
+            ActualMaterialUsed = 3m,
+            ReviewedAt = DateTime.UtcNow
+        });
+        await ctx.SaveChangesAsync();
+        var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var result = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
+
+        var issue = Assert.Single(result.Transfer!.QualityIssues);
+        Assert.Equal(3, issue.Quantity);
+        Assert.Equal("Không thể sửa đường may bị lệch", issue.RejectionNotes);
+        Assert.Equal(3m, issue.ActualMaterialUsed);
+    }
+
+    [Fact]
     public async Task CreateTransfer_NoApprovedWork_Throws()
     {
         using var ctx = TestDataFactory.CreateContext();

@@ -14,7 +14,19 @@ public record TransferRequestDto(
     DateTime? ApprovedAt,
     int? ConfirmedByQCId,
     DateTime? ConfirmedAt,
-    string Status
+    string Status,
+    List<TransferQualityIssueDto> QualityIssues
+);
+
+public record TransferQualityIssueDto(
+    int WorkId,
+    int StaffId,
+    string StaffName,
+    int Quantity,
+    string RejectionNotes,
+    decimal? ActualMaterialUsed,
+    DateTime? ReviewedAt,
+    List<string> RejectionPhotoUrls
 );
 
 public record CreateTransferDto(int BatchId);

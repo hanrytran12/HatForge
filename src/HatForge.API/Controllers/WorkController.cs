@@ -53,6 +53,7 @@ public class WorkController : BaseApiController
     public async Task<ActionResult<ApiResponse<WorkDto>>> Reject(
         [FromForm] int workId,
         [FromForm] string rejectionNotes,
+        [FromForm] bool canBeReworked,
         [FromForm] decimal actualMaterialUsed,
         IFormFileCollection photos)
     {
@@ -66,7 +67,7 @@ public class WorkController : BaseApiController
             }
         }
 
-        var dto = new RejectWorkDto(workId, rejectionNotes, actualMaterialUsed, photoUrls);
+        var dto = new RejectWorkDto(workId, rejectionNotes, canBeReworked, actualMaterialUsed, photoUrls);
         return Success(await _workService.RejectWorkAsync(dto, CurrentUserId));
     }
 

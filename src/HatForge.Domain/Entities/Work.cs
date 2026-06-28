@@ -13,6 +13,7 @@ public class Work
     public WorkStatus Status { get; set; } = WorkStatus.Submitted;
 
     public string? RejectionNotes { get; set; }
+    public bool? RejectionCanBeReworked { get; set; }
     public int? ReviewedByQCId { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public decimal? ActualMaterialUsed { get; set; }

@@ -74,7 +74,7 @@ public class ValidatorTests
     public void RejectWork_NoNotes_Invalid()
     {
         var v = new RejectWorkValidator();
-        var result = v.TestValidate(new RejectWorkDto(1, "", 0m, new List<string>()));
+        var result = v.TestValidate(new RejectWorkDto(1, "", true, 0m, new List<string>()));
         result.ShouldHaveValidationErrorFor(x => x.RejectionNotes);
     }
 
