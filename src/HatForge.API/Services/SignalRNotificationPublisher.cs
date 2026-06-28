@@ -1,5 +1,6 @@
 using System.Text.Json;
 using HatForge.API.Hubs;
+using HatForge.Application.DTOs;
 using HatForge.Application.Interfaces;
 using HatForge.Domain.Entities;
 using HatForge.Domain.Interfaces;
@@ -252,6 +253,11 @@ public class SignalRNotificationPublisher : INotificationPublisher
 
     public async Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, int leadId, object payload)
     {
+        var materialSummary = GetLowMaterialSummary(payload);
+        var deliveredSummary = GetDeliveredMaterialSummary(payload);
+        var isOutOfMaterial = IsOutOfMaterial(payload);
+        var alertPrefix = isOutOfMaterial ? "Đã hết" : "Sắp hết";
+
         await Task.WhenAll(
             _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialLowAlert", payload),
             _hub.Clients.Group($"user_{leadId}").SendAsync("MaterialLowAlert", payload),
@@ -263,15 +269,36 @@ public class SignalRNotificationPublisher : INotificationPublisher
         foreach (var qc in qcUsers)
         {
             await SaveAsync(qc.Id, "MaterialLowAlert",
-                "Sắp hết vải — cần tạo yêu cầu bổ sung",
-                $"Lô hàng #{batchId} tại xưởng của bạn sắp hết vải. Vui lòng tạo Material Request bổ sung.",
+                $"{alertPrefix} {materialSummary} — cần tạo yêu cầu bổ sung",
+                $"Lô hàng #{batchId} tại xưởng của bạn {alertPrefix.ToLowerInvariant()} {materialSummary}. Đã nhận thực tế: {deliveredSummary}.",
                 payload);
         }
 
         await SaveAsync(leadId, "MaterialLowAlert",
-            "Sắp hết vải tại xưởng",
-            $"Lô hàng #{batchId} tại xưởng #{workshopId} sắp hết vải.",
+            $"{alertPrefix} {materialSummary} tại xưởng",
+            $"Lô hàng #{batchId} tại xưởng #{workshopId} {alertPrefix.ToLowerInvariant()} {materialSummary}. Đã nhận thực tế: {deliveredSummary}.",
             payload);
+    }
+
+    private static bool IsOutOfMaterial(object payload)
+    {
+        return payload is MaterialLowAlertPayload alert && alert.MaterialRemaining <= 0;
+    }
+
+    private static string GetLowMaterialSummary(object payload)
+    {
+        if (payload is not MaterialLowAlertPayload alert || alert.Materials.Count == 0)
+            return "nguyên vật liệu";
+
+        return string.Join(", ", alert.Materials.Select(i => i.MaterialName));
+    }
+
+    private static string GetDeliveredMaterialSummary(object payload)
+    {
+        if (payload is not MaterialLowAlertPayload alert || alert.Materials.Count == 0)
+            return "chưa có dữ liệu giao nhận";
+
+        return string.Join(", ", alert.Materials.Select(i => $"{i.MaterialName}: {i.ActualQuantity}"));
     }
 
     private async Task SaveAsync(int userId, string type, string title, string message, object payload)

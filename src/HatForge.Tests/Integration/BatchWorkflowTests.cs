@@ -120,7 +120,7 @@ public class BatchWorkflowTests
             new SubmitWorkDto(batch.Id, 1, 50, new List<string> { "/uploads/x.jpg" }), staffId: 2);
 
         var rejected = await workService.RejectWorkAsync(
-            new RejectWorkDto(work.Id, "Wrong fabric color", new List<string>()), qcId: 3);
+            new RejectWorkDto(work.Id, "Wrong fabric color", 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), rejected.Status);
         Assert.Equal("Wrong fabric color", rejected.RejectionNotes);

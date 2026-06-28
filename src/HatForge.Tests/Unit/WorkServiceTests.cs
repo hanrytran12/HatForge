@@ -180,10 +180,33 @@ public class WorkServiceTests
 
         var work = await service.SubmitWorkAsync(
             new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", new List<string>()), qcId: 3);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 20m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(20m, bw.MaterialUsed);
+    }
+
+    [Fact]
+    public async Task RejectWork_WithMaterials_ReconcilesEstimateToActualUsage()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2m);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 12m, new List<string>()), qcId: 3);
+
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        Assert.Equal(12m, bw.MaterialUsed);
+        Assert.Equal(12m, result.ActualMaterialUsed);
     }
 
     [Fact]
@@ -206,6 +229,98 @@ public class WorkServiceTests
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(15m, bw.MaterialUsed);
+    }
+
+    [Fact]
+    public async Task ApproveWork_WhenMaterialsLow_IncludesDeliveredMaterialDetailsInAlert()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 10m,
+            estimatedMetersPerUnit: 1m);
+
+        var delivery = new MaterialDelivery
+        {
+            BatchId = batchId,
+            WorkshopId = 1,
+            ScheduledDate = DateTime.UtcNow,
+            IsConfirmed = true,
+            Status = MaterialDeliveryStatus.Received
+        };
+        ctx.MaterialDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+
+        ctx.MaterialDeliveryItems.Add(new MaterialDeliveryItem
+        {
+            MaterialDeliveryId = delivery.Id,
+            MaterialName = "Vải kaki",
+            PlannedQuantity = 10,
+            ActualQuantity = 10
+        });
+        await ctx.SaveChangesAsync();
+
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var notifications = new NoOpNotificationPublisher();
+        var service = new WorkService(uow, notifications);
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 7, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 7m, null), qcId: 3);
+
+        var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
+        var material = Assert.Single(payload.Materials);
+        Assert.Equal("Vải kaki", material.MaterialName);
+        Assert.Equal(10, material.ActualQuantity);
+        Assert.Equal(3m, payload.MaterialRemaining);
+    }
+
+    [Fact]
+    public async Task RejectWork_WhenMaterialsOut_SendsMaterialAlert()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 10m,
+            estimatedMetersPerUnit: 1m);
+
+        var delivery = new MaterialDelivery
+        {
+            BatchId = batchId,
+            WorkshopId = 1,
+            ScheduledDate = DateTime.UtcNow,
+            IsConfirmed = true,
+            Status = MaterialDeliveryStatus.Received
+        };
+        ctx.MaterialDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+
+        ctx.MaterialDeliveryItems.Add(new MaterialDeliveryItem
+        {
+            MaterialDeliveryId = delivery.Id,
+            MaterialName = "Vải",
+            PlannedQuantity = 10,
+            ActualQuantity = 10
+        });
+        await ctx.SaveChangesAsync();
+
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var notifications = new NoOpNotificationPublisher();
+        var service = new WorkService(uow, notifications);
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", 10m, new List<string>()), qcId: 3);
+
+        var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
+        Assert.Equal(0m, payload.MaterialRemaining);
+        Assert.Equal("Vải", Assert.Single(payload.Materials).MaterialName);
     }
 
     [Fact]
@@ -278,7 +393,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", new List<string>()), qcId: 3);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), result.Status);
         Assert.Equal("Loose stitching", result.RejectionNotes);
