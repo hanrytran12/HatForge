@@ -13,6 +13,7 @@ public record BatchDto(
     DateTime EndDate,
     DateTime CreatedAt,
     DateTime? CompletedAt,
+    int? CompletedQuantity,
     List<WorkshopInBatchDto> Workshops
 );
 
@@ -65,4 +66,53 @@ public record BatchListDto(
     DateTime StartDate,
     DateTime EndDate,
     DateTime CreatedAt
+);
+
+public record BatchFinalSummaryDto(
+    int BatchId,
+    string BatchNumber,
+    string Status,
+    int TargetQuantity,
+    int? CompletedQuantity,
+    List<FinalSummaryWorkshopDto> Workshops,
+    FinalSummaryTransferCountsDto Transfers,
+    FinalSummaryMaterialRequestCountsDto MaterialRequests
+);
+
+public record FinalSummaryWorkshopDto(
+    int WorkshopId,
+    string WorkshopName,
+    int OrderIndex,
+    bool IsCompleted,
+    bool RequiresMaterials,
+    bool MaterialsReceived,
+    FinalSummaryWorkCountsDto Works,
+    FinalSummaryMaterialUsageDto Materials
+);
+
+public record FinalSummaryWorkCountsDto(
+    int Submitted,
+    int Approved,
+    int Rejected,
+    int ApprovedQuantity
+);
+
+public record FinalSummaryMaterialUsageDto(
+    decimal InitialQty,
+    decimal Used,
+    decimal Remaining
+);
+
+public record FinalSummaryTransferCountsDto(
+    int Pending,
+    int Approved,
+    int Transferred,
+    int Total
+);
+
+public record FinalSummaryMaterialRequestCountsDto(
+    int Pending,
+    int Approved,
+    int Fulfilled,
+    int Total
 );

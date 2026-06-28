@@ -252,12 +252,8 @@ public class WorkService : IWorkService
         if (materialRemaining > MaterialTracking.LowMaterialThresholdMeters)
             return;
 
-        var batch = await _unitOfWork.Batches.GetByIdAsync(batchId);
-        if (batch?.AssignedToLeadId is not int leadId)
-            return;
-
         await _notifications.NotifyMaterialLowAlertAsync(
-            batchId, workshopId, leadId,
+            batchId, workshopId,
             await BuildMaterialLowAlertPayloadAsync(
                 batchId,
                 workshopId,

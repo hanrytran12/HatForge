@@ -1,5 +1,6 @@
 using HatForge.Application.DTOs;
 using HatForge.Domain.Entities;
+using HatForge.Domain.Enums;
 
 namespace HatForge.Application.Interfaces;
 
@@ -10,9 +11,11 @@ public interface IBatchService
     Task<BatchDto?> GetBatchByIdAsync(int id);
     Task<IReadOnlyList<BatchListDto>> GetAllBatchesAsync();
     Task<IReadOnlyList<BatchListDto>> GetBatchesByLeadAsync(int leadId);
+    Task<IReadOnlyList<BatchListDto>> GetBatchesByStatusAsync(BatchStatus status);
     Task<BatchDto> MarkWorkshopCompletedAsync(int batchId, int workshopId);
     Task<BatchDto> LeadApproveFinalAsync(int batchId, int leadId);
     Task<BatchDto> GateConfirmAsync(int batchId, int qcGateId);
+    Task<BatchFinalSummaryDto> GetFinalSummaryAsync(int batchId);
 }
 
 public interface IWorkService
