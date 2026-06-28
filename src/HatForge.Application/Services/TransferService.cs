@@ -54,10 +54,12 @@ public class TransferService : ITransferService
         // Last workshop in chain — trigger final review instead of transfer
         if (toBw == null)
         {
-            if (!works.Any(x => x.Status == WorkStatus.Approved))
-                throw new BusinessRuleException("Your workshop has no approved work yet");
+            if (GetPassedQuantity(works) <= 0)
+                throw new BusinessRuleException("Your workshop has no passed work yet");
             if (works.Any(x => x.Status == WorkStatus.Submitted))
                 throw new BusinessRuleException("Your workshop still has work pending QC review");
+            if (CalculateRepairableRemaining(works) > 0)
+                throw new BusinessRuleException("Your workshop still has repairable rejected work that must be resubmitted");
 
             fromBw.IsCompleted = true;
             _unitOfWork.BatchWorkshops.Update(fromBw);
@@ -78,10 +80,12 @@ public class TransferService : ITransferService
         }
 
         // Source workshop must have approved work and nothing pending QC review
-        if (!works.Any(x => x.Status == WorkStatus.Approved))
-            throw new BusinessRuleException("Your workshop has no approved work yet");
+        if (GetPassedQuantity(works) <= 0)
+            throw new BusinessRuleException("Your workshop has no passed work yet");
         if (works.Any(x => x.Status == WorkStatus.Submitted))
             throw new BusinessRuleException("Your workshop still has work pending QC review");
+        if (CalculateRepairableRemaining(works) > 0)
+            throw new BusinessRuleException("Your workshop still has repairable rejected work that must be resubmitted");
 
         // Prevent duplicate active transfer request
         var existing = await _unitOfWork.TransferRequests.FirstOrDefaultAsync(
@@ -105,8 +109,18 @@ public class TransferService : ITransferService
         await _unitOfWork.SaveChangesAsync();
 
         if (batch.AssignedToLeadId.HasValue)
+        {
+            var qualityIssues = await GetUnrepairableQualityIssuesAsync(dto.BatchId, fromWorkshopId);
+            var approvedQuantity = GetPassedQuantity(works);
             await _notifications.NotifyTransferRequestedAsync(batch.AssignedToLeadId.Value,
-                new { TransferId = transfer.Id, BatchId = dto.BatchId });
+                new
+                {
+                    TransferId = transfer.Id,
+                    BatchId = dto.BatchId,
+                    ApprovedQuantity = approvedQuantity,
+                    QualityIssues = qualityIssues
+                });
+        }
 
         var transferDto = await MapToDto(transfer.Id);
         return new CreateTransferResultDto(false, transferDto, batch.Status.ToString());
@@ -193,7 +207,11 @@ public class TransferService : ITransferService
         var transfers = await _unitOfWork.TransferRequests.FindAsync(
             x => x.Status == TransferStatus.Pending,
             new[] { "Batch", "FromWorkshop", "ToWorkshop" });
-        return transfers.Select(MapToDtoValue).ToList();
+
+        var results = new List<TransferRequestDto>();
+        foreach (var transfer in transfers)
+            results.Add(await MapToDtoValueAsync(transfer));
+        return results;
     }
 
     public async Task<IReadOnlyList<TransferRequestDto>> GetAwaitingReceiptByWorkshopAsync(int workshopId)
@@ -201,7 +219,11 @@ public class TransferService : ITransferService
         var transfers = await _unitOfWork.TransferRequests.FindAsync(
             x => x.Status == TransferStatus.Approved && x.ToWorkshopId == workshopId,
             new[] { "Batch", "FromWorkshop", "ToWorkshop" });
-        return transfers.Select(MapToDtoValue).ToList();
+
+        var results = new List<TransferRequestDto>();
+        foreach (var transfer in transfers)
+            results.Add(await MapToDtoValueAsync(transfer));
+        return results;
     }
 
     private async Task<TransferRequestDto> MapToDto(int id)
@@ -209,14 +231,75 @@ public class TransferService : ITransferService
         var t = await _unitOfWork.TransferRequests.FirstOrDefaultAsync(x => x.Id == id,
             new[] { "Batch", "FromWorkshop", "ToWorkshop" })
             ?? throw new NotFoundException("Transfer not found");
-        return MapToDtoValue(t);
+        return await MapToDtoValueAsync(t);
     }
 
-    private static TransferRequestDto MapToDtoValue(TransferRequest t) => new(
-        t.Id, t.BatchId, t.Batch?.BatchNumber ?? "",
-        t.FromWorkshopId, t.FromWorkshop?.Name ?? "",
-        t.ToWorkshopId, t.ToWorkshop?.Name ?? "",
-        t.CreatedAt, t.CreatedByQCId, t.ApprovedByLeadId, t.ApprovedAt,
-        t.ConfirmedByQCId, t.ConfirmedAt, t.Status.ToString()
-    );
+    private async Task<TransferRequestDto> MapToDtoValueAsync(TransferRequest t)
+    {
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == t.BatchId && x.WorkshopId == t.FromWorkshopId);
+        var approvedQuantity = GetPassedQuantity(works);
+        var qualityIssues = await GetUnrepairableQualityIssuesAsync(t.BatchId, t.FromWorkshopId);
+
+        return new TransferRequestDto(
+            t.Id, t.BatchId, t.Batch?.BatchNumber ?? "",
+            t.FromWorkshopId, t.FromWorkshop?.Name ?? "",
+            t.ToWorkshopId, t.ToWorkshop?.Name ?? "",
+            approvedQuantity,
+            t.CreatedAt, t.CreatedByQCId, t.ApprovedByLeadId, t.ApprovedAt,
+            t.ConfirmedByQCId, t.ConfirmedAt, t.Status.ToString(),
+            qualityIssues);
+    }
+
+    private async Task<List<TransferQualityIssueDto>> GetUnrepairableQualityIssuesAsync(int batchId, int fromWorkshopId)
+    {
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == batchId
+              && x.WorkshopId == fromWorkshopId
+              && x.Status == WorkStatus.Rejected
+              && x.UnrepairableQuantity > 0,
+            new[] { "Staff", "Photos" });
+
+        return works
+            .OrderBy(x => x.SubmittedDate)
+            .Select(x => new TransferQualityIssueDto(
+                x.Id,
+                x.StaffId,
+                x.Staff?.Name ?? "",
+                x.Quantity,
+                x.PassedQuantity,
+                x.RepairableQuantity,
+                x.UnrepairableQuantity,
+                x.RejectionNotes ?? "",
+                x.ActualMaterialUsed,
+                x.ReviewedAt,
+                x.Photos
+                    .Where(p => p.Type == WorkPhotoType.Rejection)
+                    .Select(p => p.PhotoUrl)
+                    .ToList()))
+            .ToList();
+    }
+
+    private static int GetPassedQuantity(IEnumerable<Work> works)
+    {
+        return works.Sum(x => x.PassedQuantity);
+    }
+
+    private static int CalculateRepairableRemaining(IEnumerable<Work> works)
+    {
+        var remaining = 0;
+        foreach (var work in works.OrderBy(x => x.SubmittedDate).ThenBy(x => x.Id))
+        {
+            if (work.IsRework)
+            {
+                var consumedRepairable = Math.Min(remaining, work.Quantity);
+                remaining -= consumedRepairable;
+            }
+
+            if (work.Status == WorkStatus.Rejected)
+                remaining += work.RepairableQuantity;
+        }
+
+        return remaining;
+    }
 }

@@ -91,7 +91,7 @@ public class WorkServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
-        var result = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var result = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
 
         Assert.Equal(nameof(WorkStatus.Submitted), result.Status);
         Assert.Equal(10, result.Quantity);
@@ -108,7 +108,7 @@ public class WorkServiceTests
 
         // Lead (id=1) tries to submit
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 1));
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 1));
     }
 
     [Fact]
@@ -121,7 +121,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2));
     }
 
     [Fact]
@@ -139,7 +139,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var result = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(25m, bw.MaterialUsed);
@@ -161,7 +161,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2));
     }
 
     [Fact]
@@ -179,8 +179,8 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 20m, new List<string>()), qcId: 3);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0, 10, 0, 20m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(20m, bw.MaterialUsed);
@@ -201,12 +201,62 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 12m, new List<string>()), qcId: 3);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0, 10, 0, 12m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(12m, bw.MaterialUsed);
         Assert.Equal(12m, result.ActualMaterialUsed);
+        Assert.Equal(10, result.RepairableQuantity);
+    }
+
+    [Fact]
+    public async Task RejectWork_WithMixedRepairableAndUnrepairable_AllowsOnlyRepairableResubmission()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new WorkService(uow, new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 500, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var rejected = await service.RejectWorkAsync(
+            new RejectWorkDto(work.Id, "250 cần sửa, 250 hỏng không sửa được", 0, 250, 250, 0m, new List<string>()),
+            qcId: 3);
+
+        Assert.Equal(250, rejected.RepairableQuantity);
+        Assert.Equal(250, rejected.UnrepairableQuantity);
+
+        var newProduction = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 251, false, new List<string> { "/uploads/new-production.jpg" }), staffId: 2);
+        Assert.False(newProduction.IsRework);
+        await service.ApproveWorkAsync(new ApproveWorkDto(newProduction.Id, 0m, null), qcId: 3);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 251, true, new List<string> { "/uploads/too-many.jpg" }), staffId: 2));
+
+        var rework = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 250, true, new List<string> { "/uploads/rework.jpg" }), staffId: 2);
+        Assert.True(rework.IsRework);
+        Assert.Equal(250, rework.Quantity);
+    }
+
+    [Fact]
+    public async Task RejectWork_WhenQcQuantitiesDoNotMatchSubmittedQuantity_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 500, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.RejectWorkAsync(
+                new RejectWorkDto(work.Id, "Sai tổng số lượng", 250, 100, 100, 0m, new List<string>()),
+                qcId: 3));
     }
 
     [Fact]
@@ -224,7 +274,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
         await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 15m, null), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
@@ -268,7 +318,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, notifications);
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 7, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 7, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
         await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 7m, null), qcId: 3);
 
         var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
@@ -315,8 +365,8 @@ public class WorkServiceTests
         var service = new WorkService(uow, notifications);
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", 10m, new List<string>()), qcId: 3);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", 0, 0, 10, 10m, new List<string>()), qcId: 3);
 
         var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
         Assert.Equal(0m, payload.MaterialRemaining);
@@ -342,7 +392,7 @@ public class WorkServiceTests
         await ctx.SaveChangesAsync();
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 2, 10, new List<string> { "/uploads/p.jpg" }), staffId: 10));
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10));
     }
 
     [Fact]
@@ -362,7 +412,7 @@ public class WorkServiceTests
         await ctx.SaveChangesAsync();
 
         var result = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 2, 10, new List<string> { "/uploads/p.jpg" }), staffId: 10);
+            new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10);
 
         Assert.Equal(nameof(WorkStatus.Submitted), result.Status);
     }
@@ -376,7 +426,7 @@ public class WorkServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
-        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
         var result = await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Approved), result.Status);
@@ -392,8 +442,8 @@ public class WorkServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
-        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
-        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0m, new List<string>()), qcId: 3);
+        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0, 10, 0, 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), result.Status);
         Assert.Equal("Loose stitching", result.RejectionNotes);
@@ -408,7 +458,7 @@ public class WorkServiceTests
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
-        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
         await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() => service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3));

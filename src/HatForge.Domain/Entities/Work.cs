@@ -9,10 +9,14 @@ public class Work
     public int WorkshopId { get; set; }
     public int StaffId { get; set; }
     public int Quantity { get; set; }
+    public bool IsRework { get; set; }
     public DateTime SubmittedDate { get; set; } = DateTime.UtcNow;
     public WorkStatus Status { get; set; } = WorkStatus.Submitted;
 
     public string? RejectionNotes { get; set; }
+    public int PassedQuantity { get; set; }
+    public int RepairableQuantity { get; set; }
+    public int UnrepairableQuantity { get; set; }
     public int? ReviewedByQCId { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public decimal? ActualMaterialUsed { get; set; }

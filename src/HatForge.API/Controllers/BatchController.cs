@@ -29,6 +29,11 @@ public class BatchController : BaseApiController
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BatchListDto>>>> GetMyBatches()
         => Success(await _batchService.GetBatchesByLeadAsync(CurrentUserId));
 
+    [HttpGet("pending-gate-qc")]
+    [Authorize(Roles = nameof(UserRole.QCGate))]
+    public async Task<ActionResult<ApiResponse<IReadOnlyList<BatchListDto>>>> GetPendingGateQc()
+        => Success(await _batchService.GetBatchesByStatusAsync(BatchStatus.PendingGateQC));
+
     [HttpGet]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BatchListDto>>>> GetAll()
         => Success(await _batchService.GetAllBatchesAsync());
@@ -56,4 +61,9 @@ public class BatchController : BaseApiController
     [Authorize(Roles = nameof(UserRole.QCGate))]
     public async Task<ActionResult<ApiResponse<BatchDto>>> GateConfirm(int id)
         => Success(await _batchService.GateConfirmAsync(id, CurrentUserId));
+
+    [HttpGet("{id:int}/final-summary")]
+    [Authorize(Roles = nameof(UserRole.Lead) + "," + nameof(UserRole.QCGate))]
+    public async Task<ActionResult<ApiResponse<BatchFinalSummaryDto>>> GetFinalSummary(int id)
+        => Success(await _batchService.GetFinalSummaryAsync(id));
 }

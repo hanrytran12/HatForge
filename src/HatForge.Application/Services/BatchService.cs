@@ -316,8 +316,21 @@ public class BatchService : IBatchService
         if (batch.Status != BatchStatus.PendingGateQC)
             throw new BusinessRuleException("Batch is not pending gate QC confirmation");
 
+        // Auto-compute CompletedQuantity from passed quantities at the last workshop.
+        var batchWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == batchId);
+        var lastBw = batchWorkshops.OrderByDescending(x => x.OrderIndex).FirstOrDefault();
+        int? completedQuantity = null;
+        if (lastBw != null)
+        {
+            var lastWorks = await _unitOfWork.Works.FindAsync(
+                x => x.BatchId == batchId
+                  && x.WorkshopId == lastBw.WorkshopId);
+            completedQuantity = lastWorks.Sum(w => w.PassedQuantity);
+        }
+
         batch.Status = BatchStatus.Completed;
         batch.CompletedAt = DateTime.UtcNow;
+        batch.CompletedQuantity = completedQuantity;
         _unitOfWork.Batches.Update(batch);
         await _unitOfWork.SaveChangesAsync();
 
@@ -325,6 +338,85 @@ public class BatchService : IBatchService
             new { BatchId = batchId, batch.BatchNumber });
 
         return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
+    }
+
+    public async Task<BatchFinalSummaryDto> GetFinalSummaryAsync(int batchId)
+    {
+        var batch = await _unitOfWork.Batches.FirstOrDefaultAsync(
+            x => x.Id == batchId,
+            new[] { "HatModel" })
+            ?? throw new NotFoundException("Batch not found");
+
+        var batchWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(
+            x => x.BatchId == batchId,
+            new[] { "Workshop" });
+
+        var allWorks = await _unitOfWork.Works.FindAsync(x => x.BatchId == batchId);
+        var allTransfers = await _unitOfWork.TransferRequests.FindAsync(x => x.BatchId == batchId);
+        var allMaterialRequests = await _unitOfWork.MaterialRequests.FindAsync(x => x.BatchId == batchId);
+
+        var workshopDtos = batchWorkshops
+            .OrderBy(x => x.OrderIndex)
+            .Select(bw =>
+            {
+                var works = allWorks.Where(w => w.WorkshopId == bw.WorkshopId).ToList();
+                var counts = new FinalSummaryWorkCountsDto(
+                    works.Count(w => w.Status == WorkStatus.Submitted),
+                    works.Count(w => w.Status == WorkStatus.Approved),
+                    works.Count(w => w.Status == WorkStatus.Rejected),
+                    works.Sum(w => w.PassedQuantity));
+
+                var material = new FinalSummaryMaterialUsageDto(
+                    bw.InitialMaterialQty,
+                    bw.MaterialUsed,
+                    bw.InitialMaterialQty - bw.MaterialUsed);
+
+                return new FinalSummaryWorkshopDto(
+                    bw.WorkshopId,
+                    bw.Workshop?.Name ?? "",
+                    bw.OrderIndex,
+                    bw.IsCompleted,
+                    bw.RequiresMaterials,
+                    bw.MaterialsReceived,
+                    counts,
+                    material);
+            })
+            .ToList();
+
+        var transferCounts = new FinalSummaryTransferCountsDto(
+            allTransfers.Count(t => t.Status == TransferStatus.Pending),
+            allTransfers.Count(t => t.Status == TransferStatus.Approved),
+            allTransfers.Count(t => t.Status == TransferStatus.Transferred),
+            allTransfers.Count);
+
+        var materialRequestCounts = new FinalSummaryMaterialRequestCountsDto(
+            allMaterialRequests.Count(r => r.Status == MaterialRequestStatus.Pending),
+            allMaterialRequests.Count(r => r.Status == MaterialRequestStatus.Approved),
+            allMaterialRequests.Count(r => r.Status == MaterialRequestStatus.Fulfilled),
+            allMaterialRequests.Count);
+
+        return new BatchFinalSummaryDto(
+            batch.Id,
+            batch.BatchNumber,
+            batch.Status.ToString(),
+            batch.TargetQuantity,
+            batch.CompletedQuantity,
+            workshopDtos,
+            transferCounts,
+            materialRequestCounts);
+    }
+
+    public async Task<IReadOnlyList<BatchListDto>> GetBatchesByStatusAsync(BatchStatus status)
+    {
+        var batches = await _unitOfWork.Batches.FindAsync(
+            x => x.Status == status,
+            new[] { "HatModel" });
+        return batches
+            .OrderByDescending(x => x.CreatedAt)
+            .Select(x => new BatchListDto(
+                x.Id, x.BatchNumber, x.HatModel?.Name ?? "",
+                x.Status.ToString(), x.StartDate, x.EndDate, x.CreatedAt))
+            .ToList();
     }
 
     private static BatchDto MapToDto(Batch batch) => new(
@@ -340,6 +432,7 @@ public class BatchService : IBatchService
         batch.EndDate,
         batch.CreatedAt,
         batch.CompletedAt,
+        batch.CompletedQuantity,
         batch.BatchWorkshops?
             .OrderBy(x => x.OrderIndex)
             .Select(x => new WorkshopInBatchDto(

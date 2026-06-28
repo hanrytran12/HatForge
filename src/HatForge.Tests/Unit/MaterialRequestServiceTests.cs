@@ -57,6 +57,17 @@ public class MaterialRequestServiceTests
             ScheduledDate = DateTime.UtcNow, Status = MaterialDeliveryStatus.Scheduled
         };
         ctx.MaterialDeliveries.Add(delivery);
+        ctx.BatchWorkshops.Add(new BatchWorkshop
+        {
+            BatchId = batch.Id,
+            WorkshopId = Workshop1Id,
+            OrderIndex = 0,
+            RequiresMaterials = true,
+            MaterialsReceived = false,
+            IsCompleted = false,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(10)
+        });
         await ctx.SaveChangesAsync();
 
         ctx.MaterialDeliveryItems.Add(new MaterialDeliveryItem
@@ -126,6 +137,60 @@ public class MaterialRequestServiceTests
 
         var mrService = CreateService(ctx);
         var requests = await mrService.GetByBatchAsync(batchId);
+        Assert.Empty(requests);
+    }
+
+    [Fact]
+    public async Task ConfirmDelivery_ShortfallForNonFirstWorkshop_DoesNotCreateMaterialRequest()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+
+        var batch = new Batch
+        {
+            BatchNumber = "B-MR-NONFIRST", HatModelId = 1,
+            TargetQuantity = 100, Status = BatchStatus.InProduction,
+            AssignedToLeadId = LeadId,
+            StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(30)
+        };
+        ctx.Batches.Add(batch);
+        await ctx.SaveChangesAsync();
+
+        ctx.BatchWorkshops.Add(new BatchWorkshop
+        {
+            BatchId = batch.Id, WorkshopId = Workshop3Id,
+            OrderIndex = 1, RequiresMaterials = true,
+            MaterialsReceived = false,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(10)
+        });
+        var delivery = new MaterialDelivery
+        {
+            BatchId = batch.Id,
+            WorkshopId = Workshop3Id,
+            ScheduledDate = DateTime.UtcNow,
+            Status = MaterialDeliveryStatus.Scheduled
+        };
+        ctx.MaterialDeliveries.Add(delivery);
+        await ctx.SaveChangesAsync();
+
+        var item = new MaterialDeliveryItem
+        {
+            MaterialDeliveryId = delivery.Id,
+            MaterialName = "Wool Felt",
+            PlannedQuantity = 100
+        };
+        ctx.MaterialDeliveryItems.Add(item);
+        await ctx.SaveChangesAsync();
+
+        await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            new ConfirmMaterialDeliveryDto(delivery.Id, new List<ConfirmMaterialItemDto>
+            {
+                new(item.Id, 50)
+            }), qcId: 7);
+
+        var requests = await CreateService(ctx).GetByBatchAsync(batch.Id);
         Assert.Empty(requests);
     }
 
@@ -351,6 +416,16 @@ public class MaterialRequestServiceTests
             ScheduledDate = DateTime.UtcNow, Status = MaterialDeliveryStatus.Scheduled
         };
         ctx.MaterialDeliveries.Add(deliveryB);
+        ctx.BatchWorkshops.Add(new BatchWorkshop
+        {
+            BatchId = batchB.Id,
+            WorkshopId = Workshop1Id,
+            OrderIndex = 0,
+            RequiresMaterials = true,
+            MaterialsReceived = false,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(10)
+        });
         await ctx.SaveChangesAsync();
         var itemB1 = new MaterialDeliveryItem
         {
@@ -383,21 +458,11 @@ public class MaterialRequestServiceTests
         await TestDataFactory.SeedBaseAsync(ctx);
         var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
 
-        // Create the BatchWorkshop entry that confirms
-        var bw = new BatchWorkshop
-        {
-            BatchId = batchId, WorkshopId = Workshop1Id, OrderIndex = 0,
-            RequiresMaterials = true, MaterialsReceived = false, IsCompleted = false,
-            StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10)
-        };
-        ctx.BatchWorkshops.Add(bw);
-        await ctx.SaveChangesAsync();
-
         await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
             BuildConfirm(deliveryId, item1, 400, item2, 100), QcId);
 
         var reloaded = await TestDataFactory.CreateUnitOfWork(ctx)
-            .BatchWorkshops.FirstOrDefaultAsync(x => x.Id == bw.Id);
+            .BatchWorkshops.FirstOrDefaultAsync(x => x.BatchId == batchId && x.WorkshopId == Workshop1Id);
         Assert.NotNull(reloaded);
         Assert.True(reloaded!.MaterialsReceived);
     }
@@ -409,7 +474,8 @@ public class MaterialRequestServiceTests
         BatchStatus status = BatchStatus.InProduction,
         int workshopId = Workshop1Id,
         int leadId = LeadId,
-        bool requiresMaterials = true)
+        bool requiresMaterials = true,
+        int orderIndex = 0)
     {
         var batch = new Batch
         {
@@ -423,7 +489,7 @@ public class MaterialRequestServiceTests
 
         ctx.BatchWorkshops.Add(new BatchWorkshop
         {
-            BatchId = batch.Id, WorkshopId = workshopId, OrderIndex = 0,
+            BatchId = batch.Id, WorkshopId = workshopId, OrderIndex = orderIndex,
             RequiresMaterials = requiresMaterials, MaterialsReceived = true, IsCompleted = false,
             StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10)
         });
@@ -460,6 +526,23 @@ public class MaterialRequestServiceTests
         Assert.Single(result.Items);
         Assert.Equal("Wool Felt", result.Items[0].MaterialName);
         Assert.Equal(50, result.Items[0].ShortfallQuantity);
+    }
+
+    [Fact]
+    public async Task CreateAdHoc_ForNonFirstWorkshop_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 7, workshopId: Workshop3Id));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            workshopId: Workshop3Id,
+            requiresMaterials: true,
+            orderIndex: 1);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).CreateAdHocRequestAsync(BuildAdHoc(batchId, Workshop3Id), qcId: 7));
     }
 
     [Fact]

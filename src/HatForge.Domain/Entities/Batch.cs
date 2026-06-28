@@ -14,6 +14,7 @@ public class Batch
     public DateTime EndDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? CompletedAt { get; set; }
+    public int? CompletedQuantity { get; set; }
 
     public HatModel HatModel { get; set; } = null!;
     public User? AssignedToLead { get; set; }

@@ -69,6 +69,15 @@ public class RejectWorkValidator : AbstractValidator<RejectWorkDto>
     {
         RuleFor(x => x.WorkId).GreaterThan(0);
         RuleFor(x => x.RejectionNotes).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.PassedQuantity)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("PassedQuantity must be greater than or equal to 0");
+        RuleFor(x => x.RepairableQuantity)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("RepairableQuantity must be greater than or equal to 0");
+        RuleFor(x => x.UnrepairableQuantity)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("UnrepairableQuantity must be greater than or equal to 0");
         RuleFor(x => x.ActualMaterialUsed)
             .GreaterThanOrEqualTo(0)
             .WithMessage("ActualMaterialUsed must be greater than or equal to 0");

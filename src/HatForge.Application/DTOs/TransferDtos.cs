@@ -8,13 +8,29 @@ public record TransferRequestDto(
     string FromWorkshopName,
     int ToWorkshopId,
     string ToWorkshopName,
+    int ApprovedQuantity,
     DateTime CreatedAt,
     int? CreatedByQCId,
     int? ApprovedByLeadId,
     DateTime? ApprovedAt,
     int? ConfirmedByQCId,
     DateTime? ConfirmedAt,
-    string Status
+    string Status,
+    List<TransferQualityIssueDto> QualityIssues
+);
+
+public record TransferQualityIssueDto(
+    int WorkId,
+    int StaffId,
+    string StaffName,
+    int SubmittedQuantity,
+    int PassedQuantity,
+    int RepairableQuantity,
+    int UnrepairableQuantity,
+    string RejectionNotes,
+    decimal? ActualMaterialUsed,
+    DateTime? ReviewedAt,
+    List<string> RejectionPhotoUrls
 );
 
 public record CreateTransferDto(int BatchId);

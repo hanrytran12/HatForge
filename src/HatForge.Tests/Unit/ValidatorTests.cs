@@ -58,7 +58,7 @@ public class ValidatorTests
     public void SubmitWork_ZeroQuantity_Invalid()
     {
         var v = new SubmitWorkValidator();
-        var result = v.TestValidate(new SubmitWorkDto(1, 1, 0, new List<string> { "/p.jpg" }));
+        var result = v.TestValidate(new SubmitWorkDto(1, 1, 0, false, new List<string> { "/p.jpg" }));
         result.ShouldHaveValidationErrorFor(x => x.Quantity);
     }
 
@@ -66,7 +66,7 @@ public class ValidatorTests
     public void SubmitWork_NoPhoto_Invalid()
     {
         var v = new SubmitWorkValidator();
-        var result = v.TestValidate(new SubmitWorkDto(1, 1, 5, new List<string>()));
+        var result = v.TestValidate(new SubmitWorkDto(1, 1, 5, false, new List<string>()));
         result.ShouldHaveValidationErrorFor(x => x.PhotoUrls);
     }
 
@@ -74,7 +74,7 @@ public class ValidatorTests
     public void RejectWork_NoNotes_Invalid()
     {
         var v = new RejectWorkValidator();
-        var result = v.TestValidate(new RejectWorkDto(1, "", 0m, new List<string>()));
+        var result = v.TestValidate(new RejectWorkDto(1, "", 0, 1, 0, 0m, new List<string>()));
         result.ShouldHaveValidationErrorFor(x => x.RejectionNotes);
     }
 

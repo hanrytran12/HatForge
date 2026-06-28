@@ -251,17 +251,14 @@ public class SignalRNotificationPublisher : INotificationPublisher
             payload);
     }
 
-    public async Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, int leadId, object payload)
+    public async Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, object payload)
     {
         var materialSummary = GetLowMaterialSummary(payload);
         var deliveredSummary = GetDeliveredMaterialSummary(payload);
         var isOutOfMaterial = IsOutOfMaterial(payload);
         var alertPrefix = isOutOfMaterial ? "Đã hết" : "Sắp hết";
 
-        await Task.WhenAll(
-            _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialLowAlert", payload),
-            _hub.Clients.Group($"user_{leadId}").SendAsync("MaterialLowAlert", payload),
-            _hub.Clients.Group("leads").SendAsync("MaterialLowAlert", payload));
+        await _hub.Clients.Group($"workshop_{workshopId}").SendAsync("MaterialLowAlert", payload);
 
         var qcUsers = await _unitOfWork.Users.FindAsync(
             x => x.WorkshopId == workshopId && x.Role == Domain.Enums.UserRole.QCWorkshop);
@@ -273,11 +270,6 @@ public class SignalRNotificationPublisher : INotificationPublisher
                 $"Lô hàng #{batchId} tại xưởng của bạn {alertPrefix.ToLowerInvariant()} {materialSummary}. Đã nhận thực tế: {deliveredSummary}.",
                 payload);
         }
-
-        await SaveAsync(leadId, "MaterialLowAlert",
-            $"{alertPrefix} {materialSummary} tại xưởng",
-            $"Lô hàng #{batchId} tại xưởng #{workshopId} {alertPrefix.ToLowerInvariant()} {materialSummary}. Đã nhận thực tế: {deliveredSummary}.",
-            payload);
     }
 
     private static bool IsOutOfMaterial(object payload)
