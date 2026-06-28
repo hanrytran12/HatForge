@@ -480,15 +480,21 @@ namespace HatForge.Infrastructure.Data.Migrations
                         .HasPrecision(18, 4)
                         .HasColumnType("numeric(18,4)");
 
-                    b.Property<int>("Quantity")
+                    b.Property<bool>("IsRework")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("PassedQuantity")
                         .HasColumnType("integer");
 
-                    b.Property<bool?>("RejectionCanBeReworked")
-                        .HasColumnType("boolean");
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer");
 
                     b.Property<string>("RejectionNotes")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
+
+                    b.Property<int>("RepairableQuantity")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("ReviewedAt")
                         .HasColumnType("timestamp with time zone");
@@ -504,6 +510,9 @@ namespace HatForge.Infrastructure.Data.Migrations
 
                     b.Property<DateTime>("SubmittedDate")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UnrepairableQuantity")
+                        .HasColumnType("integer");
 
                     b.Property<int>("WorkshopId")
                         .HasColumnType("integer");

@@ -39,7 +39,8 @@ public class TransferServiceTests
             ctx.Works.Add(new Work
             {
                 BatchId = batch.Id, WorkshopId = 1, StaffId = 2,
-                Quantity = 10, Status = WorkStatus.Approved
+                Quantity = 10, Status = WorkStatus.Approved,
+                PassedQuantity = 10
             });
 
         await ctx.SaveChangesAsync();
@@ -79,7 +80,7 @@ public class TransferServiceTests
             Quantity = 3,
             Status = WorkStatus.Rejected,
             RejectionNotes = "Không thể sửa đường may bị lệch",
-            RejectionCanBeReworked = false,
+            UnrepairableQuantity = 3,
             ActualMaterialUsed = 3m,
             ReviewedAt = DateTime.UtcNow
         });
@@ -89,9 +90,65 @@ public class TransferServiceTests
         var result = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
 
         var issue = Assert.Single(result.Transfer!.QualityIssues);
-        Assert.Equal(3, issue.Quantity);
+        Assert.Equal(3, issue.SubmittedQuantity);
+        Assert.Equal(3, issue.UnrepairableQuantity);
         Assert.Equal("Không thể sửa đường may bị lệch", issue.RejectionNotes);
         Assert.Equal(3m, issue.ActualMaterialUsed);
+    }
+
+    [Fact]
+    public async Task CreateTransfer_AllowsPartialPassedRejectedWork_WhenNoRepairableRemaining()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedChainAsync(ctx, firstCompleted: false, withApprovedWork: false);
+        ctx.Works.Add(new Work
+        {
+            BatchId = batchId,
+            WorkshopId = 1,
+            StaffId = 2,
+            Quantity = 500,
+            Status = WorkStatus.Rejected,
+            PassedQuantity = 250,
+            RepairableQuantity = 0,
+            UnrepairableQuantity = 250,
+            RejectionNotes = "250 đạt, 250 hỏng không sửa được"
+        });
+        await ctx.SaveChangesAsync();
+        var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var result = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
+
+        Assert.False(result.IsFinalWorkshop);
+        Assert.NotNull(result.Transfer);
+        var issue = Assert.Single(result.Transfer!.QualityIssues);
+        Assert.Equal(250, issue.PassedQuantity);
+        Assert.Equal(250, issue.UnrepairableQuantity);
+    }
+
+    [Fact]
+    public async Task CreateTransfer_BlocksWhenRepairableRejectedWorkRemains()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedChainAsync(ctx, firstCompleted: false, withApprovedWork: false);
+        ctx.Works.Add(new Work
+        {
+            BatchId = batchId,
+            WorkshopId = 1,
+            StaffId = 2,
+            Quantity = 500,
+            Status = WorkStatus.Rejected,
+            PassedQuantity = 250,
+            RepairableQuantity = 250,
+            UnrepairableQuantity = 0,
+            RejectionNotes = "250 đạt, 250 cần sửa"
+        });
+        await ctx.SaveChangesAsync();
+        var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3));
     }
 
     [Fact]

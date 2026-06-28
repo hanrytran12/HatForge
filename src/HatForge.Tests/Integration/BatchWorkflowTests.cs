@@ -47,7 +47,7 @@ public class BatchWorkflowTests
 
         // 3. Staff submits work at workshop 1
         var work = await workService.SubmitWorkAsync(
-            new SubmitWorkDto(batch.Id, 1, 100, new List<string> { "/uploads/w1.jpg" }), staffId: 2);
+            new SubmitWorkDto(batch.Id, 1, 100, false, new List<string> { "/uploads/w1.jpg" }), staffId: 2);
         Assert.Equal(nameof(WorkStatus.Submitted), work.Status);
 
         // 4. QC approves work
@@ -75,7 +75,7 @@ public class BatchWorkflowTests
         ctx.Users.Add(TestDataFactory.Staff(id: 6, workshopId: 2));
         await ctx.SaveChangesAsync();
         var work2 = await workService.SubmitWorkAsync(
-            new SubmitWorkDto(batch.Id, 2, 100, new List<string> { "/uploads/w2.jpg" }), staffId: 6);
+            new SubmitWorkDto(batch.Id, 2, 100, false, new List<string> { "/uploads/w2.jpg" }), staffId: 6);
         var approved2 = await workService.ApproveWorkAsync(new ApproveWorkDto(work2.Id, 0m, null), qcId: 5);
         Assert.Equal(nameof(WorkStatus.Approved), approved2.Status);
 
@@ -117,10 +117,10 @@ public class BatchWorkflowTests
             }), 1);
 
         var work = await workService.SubmitWorkAsync(
-            new SubmitWorkDto(batch.Id, 1, 50, new List<string> { "/uploads/x.jpg" }), staffId: 2);
+            new SubmitWorkDto(batch.Id, 1, 50, false, new List<string> { "/uploads/x.jpg" }), staffId: 2);
 
         var rejected = await workService.RejectWorkAsync(
-            new RejectWorkDto(work.Id, "Wrong fabric color", true, 0m, new List<string>()), qcId: 3);
+            new RejectWorkDto(work.Id, "Wrong fabric color", 0, 50, 0, 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), rejected.Status);
         Assert.Equal("Wrong fabric color", rejected.RejectionNotes);

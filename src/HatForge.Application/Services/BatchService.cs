@@ -316,7 +316,7 @@ public class BatchService : IBatchService
         if (batch.Status != BatchStatus.PendingGateQC)
             throw new BusinessRuleException("Batch is not pending gate QC confirmation");
 
-        // Auto-compute CompletedQuantity from approved Works at the last workshop
+        // Auto-compute CompletedQuantity from passed quantities at the last workshop.
         var batchWorkshops = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == batchId);
         var lastBw = batchWorkshops.OrderByDescending(x => x.OrderIndex).FirstOrDefault();
         int? completedQuantity = null;
@@ -324,9 +324,8 @@ public class BatchService : IBatchService
         {
             var lastWorks = await _unitOfWork.Works.FindAsync(
                 x => x.BatchId == batchId
-                  && x.WorkshopId == lastBw.WorkshopId
-                  && x.Status == WorkStatus.Approved);
-            completedQuantity = lastWorks.Sum(w => w.Quantity);
+                  && x.WorkshopId == lastBw.WorkshopId);
+            completedQuantity = lastWorks.Sum(w => w.PassedQuantity);
         }
 
         batch.Status = BatchStatus.Completed;
@@ -365,7 +364,7 @@ public class BatchService : IBatchService
                     works.Count(w => w.Status == WorkStatus.Submitted),
                     works.Count(w => w.Status == WorkStatus.Approved),
                     works.Count(w => w.Status == WorkStatus.Rejected),
-                    works.Where(w => w.Status == WorkStatus.Approved).Sum(w => w.Quantity));
+                    works.Sum(w => w.PassedQuantity));
 
                 var material = new FinalSummaryMaterialUsageDto(
                     bw.InitialMaterialQty,

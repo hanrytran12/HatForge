@@ -26,6 +26,7 @@ public class WorkController : BaseApiController
         [FromForm] int batchId,
         [FromForm] int workshopId,
         [FromForm] int quantity,
+        [FromForm] bool isRework,
         IFormFileCollection photos)
     {
         if (photos == null || photos.Count == 0)
@@ -38,7 +39,7 @@ public class WorkController : BaseApiController
             photoUrls.Add(await _fileStorage.SaveAsync(stream, photo.FileName, photo.ContentType));
         }
 
-        var dto = new SubmitWorkDto(batchId, workshopId, quantity, photoUrls);
+        var dto = new SubmitWorkDto(batchId, workshopId, quantity, isRework, photoUrls);
         return Success(await _workService.SubmitWorkAsync(dto, CurrentUserId));
     }
 
@@ -53,7 +54,9 @@ public class WorkController : BaseApiController
     public async Task<ActionResult<ApiResponse<WorkDto>>> Reject(
         [FromForm] int workId,
         [FromForm] string rejectionNotes,
-        [FromForm] bool canBeReworked,
+        [FromForm] int passedQuantity,
+        [FromForm] int repairableQuantity,
+        [FromForm] int unrepairableQuantity,
         [FromForm] decimal actualMaterialUsed,
         IFormFileCollection photos)
     {
@@ -67,7 +70,14 @@ public class WorkController : BaseApiController
             }
         }
 
-        var dto = new RejectWorkDto(workId, rejectionNotes, canBeReworked, actualMaterialUsed, photoUrls);
+        var dto = new RejectWorkDto(
+            workId,
+            rejectionNotes,
+            passedQuantity,
+            repairableQuantity,
+            unrepairableQuantity,
+            actualMaterialUsed,
+            photoUrls);
         return Success(await _workService.RejectWorkAsync(dto, CurrentUserId));
     }
 

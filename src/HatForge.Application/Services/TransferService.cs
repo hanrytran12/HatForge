@@ -54,10 +54,12 @@ public class TransferService : ITransferService
         // Last workshop in chain — trigger final review instead of transfer
         if (toBw == null)
         {
-            if (!works.Any(x => x.Status == WorkStatus.Approved))
-                throw new BusinessRuleException("Your workshop has no approved work yet");
+            if (GetPassedQuantity(works) <= 0)
+                throw new BusinessRuleException("Your workshop has no passed work yet");
             if (works.Any(x => x.Status == WorkStatus.Submitted))
                 throw new BusinessRuleException("Your workshop still has work pending QC review");
+            if (CalculateRepairableRemaining(works) > 0)
+                throw new BusinessRuleException("Your workshop still has repairable rejected work that must be resubmitted");
 
             fromBw.IsCompleted = true;
             _unitOfWork.BatchWorkshops.Update(fromBw);
@@ -78,10 +80,12 @@ public class TransferService : ITransferService
         }
 
         // Source workshop must have approved work and nothing pending QC review
-        if (!works.Any(x => x.Status == WorkStatus.Approved))
-            throw new BusinessRuleException("Your workshop has no approved work yet");
+        if (GetPassedQuantity(works) <= 0)
+            throw new BusinessRuleException("Your workshop has no passed work yet");
         if (works.Any(x => x.Status == WorkStatus.Submitted))
             throw new BusinessRuleException("Your workshop still has work pending QC review");
+        if (CalculateRepairableRemaining(works) > 0)
+            throw new BusinessRuleException("Your workshop still has repairable rejected work that must be resubmitted");
 
         // Prevent duplicate active transfer request
         var existing = await _unitOfWork.TransferRequests.FirstOrDefaultAsync(
@@ -247,7 +251,7 @@ public class TransferService : ITransferService
             x => x.BatchId == batchId
               && x.WorkshopId == fromWorkshopId
               && x.Status == WorkStatus.Rejected
-              && x.RejectionCanBeReworked == false,
+              && x.UnrepairableQuantity > 0,
             new[] { "Staff", "Photos" });
 
         return works
@@ -257,6 +261,9 @@ public class TransferService : ITransferService
                 x.StaffId,
                 x.Staff?.Name ?? "",
                 x.Quantity,
+                x.PassedQuantity,
+                x.RepairableQuantity,
+                x.UnrepairableQuantity,
                 x.RejectionNotes ?? "",
                 x.ActualMaterialUsed,
                 x.ReviewedAt,
@@ -265,5 +272,28 @@ public class TransferService : ITransferService
                     .Select(p => p.PhotoUrl)
                     .ToList()))
             .ToList();
+    }
+
+    private static int GetPassedQuantity(IEnumerable<Work> works)
+    {
+        return works.Sum(x => x.PassedQuantity);
+    }
+
+    private static int CalculateRepairableRemaining(IEnumerable<Work> works)
+    {
+        var remaining = 0;
+        foreach (var work in works.OrderBy(x => x.SubmittedDate).ThenBy(x => x.Id))
+        {
+            if (work.IsRework)
+            {
+                var consumedRepairable = Math.Min(remaining, work.Quantity);
+                remaining -= consumedRepairable;
+            }
+
+            if (work.Status == WorkStatus.Rejected)
+                remaining += work.RepairableQuantity;
+        }
+
+        return remaining;
     }
 }

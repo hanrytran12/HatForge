@@ -90,12 +90,25 @@ public class WorkService : IWorkService
         if (pendingWork != null)
             throw new BusinessRuleException("There is already a pending work submission awaiting QC review for this workshop");
 
+        var existingWorks = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId);
+        if (dto.IsRework)
+        {
+            var repairableRemaining = CalculateRepairableRemaining(existingWorks);
+            if (repairableRemaining <= 0)
+                throw new BusinessRuleException("There is no repairable work remaining to resubmit for this workshop");
+            if (dto.Quantity > repairableRemaining)
+                throw new BusinessRuleException(
+                    $"Cannot resubmit {dto.Quantity} items because only {repairableRemaining} repairable items remain");
+        }
+
         var work = new Work
         {
             BatchId = dto.BatchId,
             WorkshopId = dto.WorkshopId,
             StaffId = staffId,
             Quantity = dto.Quantity,
+            IsRework = dto.IsRework,
             Status = WorkStatus.Submitted,
             EstimatedMaterialUsed = estimatedUsage
         };
@@ -148,7 +161,9 @@ public class WorkService : IWorkService
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
         work.ActualMaterialUsed = dto.ActualMaterialUsed;
-        work.RejectionCanBeReworked = null;
+        work.PassedQuantity = work.Quantity;
+        work.RepairableQuantity = 0;
+        work.UnrepairableQuantity = 0;
         _unitOfWork.Works.Update(work);
 
         var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
@@ -176,9 +191,16 @@ public class WorkService : IWorkService
         if (work.Status != WorkStatus.Submitted)
             throw new BusinessRuleException("Work is not in submitted state");
 
+        var reviewedQuantity = dto.PassedQuantity + dto.RepairableQuantity + dto.UnrepairableQuantity;
+        if (reviewedQuantity != work.Quantity)
+            throw new BusinessRuleException(
+                $"QC quantities must add up to submitted quantity ({work.Quantity})");
+
         work.Status = WorkStatus.Rejected;
         work.RejectionNotes = dto.RejectionNotes;
-        work.RejectionCanBeReworked = dto.CanBeReworked;
+        work.PassedQuantity = dto.PassedQuantity;
+        work.RepairableQuantity = dto.RepairableQuantity;
+        work.UnrepairableQuantity = dto.UnrepairableQuantity;
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
         work.ActualMaterialUsed = dto.ActualMaterialUsed;
@@ -203,7 +225,9 @@ public class WorkService : IWorkService
         await _notifications.NotifyWorkRejectedAsync(work.BatchId, work.StaffId, new
         {
             WorkId = work.Id,
-            dto.CanBeReworked
+            dto.PassedQuantity,
+            dto.RepairableQuantity,
+            dto.UnrepairableQuantity
         });
 
         if (remainingAfter.HasValue)
@@ -235,6 +259,24 @@ public class WorkService : IWorkService
             new[] { "Workshop", "Staff", "ReviewedByQC", "Photos" })
             ?? throw new NotFoundException("Work not found");
         return MapToDtoValue(work);
+    }
+
+    private static int CalculateRepairableRemaining(IEnumerable<Work> works)
+    {
+        var remaining = 0;
+        foreach (var work in works.OrderBy(x => x.SubmittedDate).ThenBy(x => x.Id))
+        {
+            if (work.IsRework)
+            {
+                var consumedRepairable = Math.Min(remaining, work.Quantity);
+                remaining -= consumedRepairable;
+            }
+
+            if (work.Status == WorkStatus.Rejected)
+                remaining += work.RepairableQuantity;
+        }
+
+        return remaining;
     }
 
     private async Task<decimal?> ReconcileMaterialUsageAsync(Work work, decimal actualMaterialUsed)
@@ -311,12 +353,14 @@ public class WorkService : IWorkService
 
     private static WorkDto MapToDtoValue(Work w) => new(
         w.Id, w.BatchId, w.WorkshopId, w.Workshop?.Name ?? "",
-        w.StaffId, w.Staff?.Name ?? "", w.Quantity,
+        w.StaffId, w.Staff?.Name ?? "", w.Quantity, w.IsRework,
         w.Photos.Where(p => p.Type == WorkPhotoType.Submission).Select(p => p.PhotoUrl).ToList(),
         w.Photos.Where(p => p.Type == WorkPhotoType.Rejection).Select(p => p.PhotoUrl).ToList(),
         w.SubmittedDate, w.Status.ToString(),
         w.RejectionNotes,
-        w.RejectionCanBeReworked,
+        w.PassedQuantity,
+        w.RepairableQuantity,
+        w.UnrepairableQuantity,
         w.ReviewedByQCId, w.ReviewedAt,
         w.ActualMaterialUsed,
         w.EstimatedMaterialUsed
