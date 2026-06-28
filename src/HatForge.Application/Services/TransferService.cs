@@ -111,11 +111,13 @@ public class TransferService : ITransferService
         if (batch.AssignedToLeadId.HasValue)
         {
             var qualityIssues = await GetUnrepairableQualityIssuesAsync(dto.BatchId, fromWorkshopId);
+            var approvedQuantity = GetPassedQuantity(works);
             await _notifications.NotifyTransferRequestedAsync(batch.AssignedToLeadId.Value,
                 new
                 {
                     TransferId = transfer.Id,
                     BatchId = dto.BatchId,
+                    ApprovedQuantity = approvedQuantity,
                     QualityIssues = qualityIssues
                 });
         }
@@ -234,12 +236,16 @@ public class TransferService : ITransferService
 
     private async Task<TransferRequestDto> MapToDtoValueAsync(TransferRequest t)
     {
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == t.BatchId && x.WorkshopId == t.FromWorkshopId);
+        var approvedQuantity = GetPassedQuantity(works);
         var qualityIssues = await GetUnrepairableQualityIssuesAsync(t.BatchId, t.FromWorkshopId);
 
         return new TransferRequestDto(
             t.Id, t.BatchId, t.Batch?.BatchNumber ?? "",
             t.FromWorkshopId, t.FromWorkshop?.Name ?? "",
             t.ToWorkshopId, t.ToWorkshop?.Name ?? "",
+            approvedQuantity,
             t.CreatedAt, t.CreatedByQCId, t.ApprovedByLeadId, t.ApprovedAt,
             t.ConfirmedByQCId, t.ConfirmedAt, t.Status.ToString(),
             qualityIssues);

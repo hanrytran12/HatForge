@@ -8,6 +8,7 @@ public record TransferRequestDto(
     string FromWorkshopName,
     int ToWorkshopId,
     string ToWorkshopName,
+    int ApprovedQuantity,
     DateTime CreatedAt,
     int? CreatedByQCId,
     int? ApprovedByLeadId,

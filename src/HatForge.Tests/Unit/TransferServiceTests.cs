@@ -64,6 +64,7 @@ public class TransferServiceTests
         Assert.Equal(1, result.Transfer.FromWorkshopId);
         Assert.Equal(2, result.Transfer.ToWorkshopId);
         Assert.Equal(3, result.Transfer.CreatedByQCId);
+        Assert.Equal(10, result.Transfer.ApprovedQuantity);
     }
 
     [Fact]
@@ -121,7 +122,8 @@ public class TransferServiceTests
 
         Assert.False(result.IsFinalWorkshop);
         Assert.NotNull(result.Transfer);
-        var issue = Assert.Single(result.Transfer!.QualityIssues);
+        Assert.Equal(250, result.Transfer!.ApprovedQuantity);
+        var issue = Assert.Single(result.Transfer.QualityIssues);
         Assert.Equal(250, issue.PassedQuantity);
         Assert.Equal(250, issue.UnrepairableQuantity);
     }
