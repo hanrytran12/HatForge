@@ -45,7 +45,7 @@ public class WorkController : BaseApiController
     [HttpPut("approve")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
     public async Task<ActionResult<ApiResponse<WorkDto>>> Approve([FromBody] ApproveWorkDto dto)
-        => Success(await _workService.ApproveWorkAsync(dto.WorkId, CurrentUserId));
+        => Success(await _workService.ApproveWorkAsync(dto, CurrentUserId));
 
     [HttpPut("reject")]
     [Authorize(Roles = nameof(UserRole.QCWorkshop))]
@@ -53,6 +53,7 @@ public class WorkController : BaseApiController
     public async Task<ActionResult<ApiResponse<WorkDto>>> Reject(
         [FromForm] int workId,
         [FromForm] string rejectionNotes,
+        [FromForm] decimal actualMaterialUsed,
         IFormFileCollection photos)
     {
         var photoUrls = new List<string>();
@@ -65,7 +66,7 @@ public class WorkController : BaseApiController
             }
         }
 
-        var dto = new RejectWorkDto(workId, rejectionNotes, photoUrls);
+        var dto = new RejectWorkDto(workId, rejectionNotes, actualMaterialUsed, photoUrls);
         return Success(await _workService.RejectWorkAsync(dto, CurrentUserId));
     }
 

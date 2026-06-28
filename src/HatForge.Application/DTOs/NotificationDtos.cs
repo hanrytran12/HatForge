@@ -9,3 +9,16 @@ public record NotificationDto(
     bool IsRead,
     DateTime CreatedAt
 );
+
+public record MaterialLowAlertPayload(
+    int BatchId,
+    int WorkshopId,
+    decimal MaterialRemaining,
+    decimal Threshold,
+    List<MaterialLowAlertItemDto> Materials
+);
+
+public record MaterialLowAlertItemDto(
+    string MaterialName,
+    int ActualQuantity
+);

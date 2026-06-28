@@ -48,6 +48,19 @@ public class WorkService : IWorkService
         if (workshopBw.RequiresMaterials && !workshopBw.MaterialsReceived)
             throw new BusinessRuleException("Workshop has not received materials yet");
 
+        // Guard: cannot submit if no material remaining
+        if (workshopBw.RequiresMaterials && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed <= 0)
+            throw new BusinessRuleException("Không có đủ nguyên vật liệu để làm việc");
+
+        var estimatedUsage = workshopBw.RequiresMaterials
+            ? dto.Quantity * workshopBw.EstimatedMetersPerUnit
+            : 0m;
+
+        if (workshopBw.RequiresMaterials
+            && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed < estimatedUsage)
+            throw new BusinessRuleException(
+                $"Không đủ nguyên vật liệu. Cần {Math.Round(estimatedUsage, 0, MidpointRounding.AwayFromZero)}m nhưng chỉ còn {Math.Round(workshopBw.InitialMaterialQty - workshopBw.MaterialUsed, 0, MidpointRounding.AwayFromZero)}m");
+
         // Workshops after the first in the chain must wait for a transfer from the previous workshop
         if (workshopBw.OrderIndex > 0)
         {
@@ -83,13 +96,20 @@ public class WorkService : IWorkService
             WorkshopId = dto.WorkshopId,
             StaffId = staffId,
             Quantity = dto.Quantity,
-            Status = WorkStatus.Submitted
+            Status = WorkStatus.Submitted,
+            EstimatedMaterialUsed = estimatedUsage
         };
 
         await _unitOfWork.Works.AddAsync(work);
 
         batch.Status = BatchStatus.UnderQCReview;
         _unitOfWork.Batches.Update(batch);
+
+        if (workshopBw.RequiresMaterials && estimatedUsage > 0)
+        {
+            workshopBw.MaterialUsed += estimatedUsage;
+            _unitOfWork.BatchWorkshops.Update(workshopBw);
+        }
 
         await _unitOfWork.SaveChangesAsync();
 
@@ -111,14 +131,14 @@ public class WorkService : IWorkService
         return await MapToDto(work.Id);
     }
 
-    public async Task<WorkDto> ApproveWorkAsync(int workId, int qcId)
+    public async Task<WorkDto> ApproveWorkAsync(ApproveWorkDto dto, int qcId)
     {
         var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
             ?? throw new NotFoundException("QC user not found");
         if (qc.Role != UserRole.QCWorkshop)
             throw new ForbiddenException("Only QC Workshop can approve work");
 
-        var work = await _unitOfWork.Works.GetByIdAsync(workId)
+        var work = await _unitOfWork.Works.GetByIdAsync(dto.WorkId)
             ?? throw new NotFoundException("Work not found");
 
         if (work.Status != WorkStatus.Submitted)
@@ -127,12 +147,19 @@ public class WorkService : IWorkService
         work.Status = WorkStatus.Approved;
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
+        work.ActualMaterialUsed = dto.ActualMaterialUsed;
         _unitOfWork.Works.Update(work);
+
+        var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
+
         await _unitOfWork.SaveChangesAsync();
 
         await _notifications.NotifyWorkApprovedAsync(work.BatchId, work.StaffId, new { WorkId = work.Id });
 
-        return await MapToDto(workId);
+        if (remainingAfter.HasValue)
+            await NotifyMaterialLowIfNeededAsync(work.BatchId, work.WorkshopId, remainingAfter.Value);
+
+        return await MapToDto(dto.WorkId);
     }
 
     public async Task<WorkDto> RejectWorkAsync(RejectWorkDto dto, int qcId)
@@ -152,7 +179,10 @@ public class WorkService : IWorkService
         work.RejectionNotes = dto.RejectionNotes;
         work.ReviewedByQCId = qcId;
         work.ReviewedAt = DateTime.UtcNow;
+        work.ActualMaterialUsed = dto.ActualMaterialUsed;
         _unitOfWork.Works.Update(work);
+
+        var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
 
         await _unitOfWork.SaveChangesAsync();
 
@@ -169,6 +199,9 @@ public class WorkService : IWorkService
         await _unitOfWork.SaveChangesAsync();
 
         await _notifications.NotifyWorkRejectedAsync(work.BatchId, work.StaffId, new { WorkId = work.Id });
+
+        if (remainingAfter.HasValue)
+            await NotifyMaterialLowIfNeededAsync(work.BatchId, work.WorkshopId, remainingAfter.Value);
 
         return await MapToDto(dto.WorkId);
     }
@@ -198,6 +231,82 @@ public class WorkService : IWorkService
         return MapToDtoValue(work);
     }
 
+    private async Task<decimal?> ReconcileMaterialUsageAsync(Work work, decimal actualMaterialUsed)
+    {
+        var bw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
+            x => x.BatchId == work.BatchId && x.WorkshopId == work.WorkshopId);
+
+        if (bw == null || !bw.RequiresMaterials)
+            return null;
+
+        var estimate = work.EstimatedMaterialUsed ?? 0m;
+        bw.MaterialUsed = bw.MaterialUsed - estimate + actualMaterialUsed;
+        if (bw.MaterialUsed < 0) bw.MaterialUsed = 0;
+
+        _unitOfWork.BatchWorkshops.Update(bw);
+        return bw.InitialMaterialQty - bw.MaterialUsed;
+    }
+
+    private async Task NotifyMaterialLowIfNeededAsync(int batchId, int workshopId, decimal materialRemaining)
+    {
+        if (materialRemaining > MaterialTracking.LowMaterialThresholdMeters)
+            return;
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(batchId);
+        if (batch?.AssignedToLeadId is not int leadId)
+            return;
+
+        await _notifications.NotifyMaterialLowAlertAsync(
+            batchId, workshopId, leadId,
+            await BuildMaterialLowAlertPayloadAsync(
+                batchId,
+                workshopId,
+                materialRemaining));
+    }
+
+    private async Task<MaterialLowAlertPayload> BuildMaterialLowAlertPayloadAsync(
+        int batchId,
+        int workshopId,
+        decimal materialRemaining)
+    {
+        var deliveredMaterials = new List<MaterialLowAlertItemDto>();
+
+        var deliveries = await _unitOfWork.MaterialDeliveries.FindAsync(
+            x => x.BatchId == batchId
+              && x.WorkshopId == workshopId
+              && x.IsConfirmed,
+            new[] { "Items" });
+
+        deliveredMaterials.AddRange(deliveries
+            .SelectMany(d => d.Items)
+            .Where(i => i.ActualQuantity > 0)
+            .Select(i => new MaterialLowAlertItemDto(i.MaterialName, i.ActualQuantity)));
+
+        var fulfilledRequests = await _unitOfWork.MaterialRequests.FindAsync(
+            x => x.BatchId == batchId
+              && x.WorkshopId == workshopId
+              && x.Status == MaterialRequestStatus.Fulfilled,
+            new[] { "Items" });
+
+        deliveredMaterials.AddRange(fulfilledRequests
+            .SelectMany(r => r.Items)
+            .Where(i => i.ActualQuantity.HasValue && i.ActualQuantity.Value > 0)
+            .Select(i => new MaterialLowAlertItemDto(i.MaterialName, i.ActualQuantity!.Value)));
+
+        var materials = deliveredMaterials
+            .GroupBy(i => i.MaterialName)
+            .Select(g => new MaterialLowAlertItemDto(g.Key, g.Sum(i => i.ActualQuantity)))
+            .OrderBy(i => i.MaterialName)
+            .ToList();
+
+        return new MaterialLowAlertPayload(
+            batchId,
+            workshopId,
+            materialRemaining,
+            MaterialTracking.LowMaterialThresholdMeters,
+            materials);
+    }
+
     private static WorkDto MapToDtoValue(Work w) => new(
         w.Id, w.BatchId, w.WorkshopId, w.Workshop?.Name ?? "",
         w.StaffId, w.Staff?.Name ?? "", w.Quantity,
@@ -205,6 +314,8 @@ public class WorkService : IWorkService
         w.Photos.Where(p => p.Type == WorkPhotoType.Rejection).Select(p => p.PhotoUrl).ToList(),
         w.SubmittedDate, w.Status.ToString(),
         w.RejectionNotes,
-        w.ReviewedByQCId, w.ReviewedAt
+        w.ReviewedByQCId, w.ReviewedAt,
+        w.ActualMaterialUsed,
+        w.EstimatedMaterialUsed
     );
 }

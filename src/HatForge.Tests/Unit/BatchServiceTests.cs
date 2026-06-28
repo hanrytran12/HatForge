@@ -22,7 +22,7 @@ public class BatchServiceTests
         {
             new("Wool Felt", 500),
             new("Thread", 100)
-        });
+        }, EstimatedMetersPerUnit: 2m);
 
     [Fact]
     public async Task CreateBatch_WithValidData_CreatesBatch()

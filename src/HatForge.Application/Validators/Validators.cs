@@ -38,6 +38,9 @@ public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
                     .NotNull().WithMessage("MaterialDeliveryDate is required when workshop requires materials");
                 w.RuleFor(x => x.MaterialItems)
                     .NotEmpty().WithMessage("At least one material item is required when workshop requires materials");
+                w.RuleFor(x => x.EstimatedMetersPerUnit)
+                    .GreaterThan(0)
+                    .WithMessage("EstimatedMetersPerUnit must be greater than 0 when workshop requires materials");
                 w.RuleForEach(x => x.MaterialItems).ChildRules(m =>
                 {
                     m.RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(256);
@@ -66,6 +69,20 @@ public class RejectWorkValidator : AbstractValidator<RejectWorkDto>
     {
         RuleFor(x => x.WorkId).GreaterThan(0);
         RuleFor(x => x.RejectionNotes).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ActualMaterialUsed)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("ActualMaterialUsed must be greater than or equal to 0");
+    }
+}
+
+public class ApproveWorkValidator : AbstractValidator<ApproveWorkDto>
+{
+    public ApproveWorkValidator()
+    {
+        RuleFor(x => x.WorkId).GreaterThan(0);
+        RuleFor(x => x.ActualMaterialUsed)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("ActualMaterialUsed must be greater than or equal to 0");
     }
 }
 

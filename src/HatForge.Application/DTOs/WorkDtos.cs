@@ -14,11 +14,13 @@ public record WorkDto(
     string Status,
     string? RejectionNotes,
     int? ReviewedByQCId,
-    DateTime? ReviewedAt
+    DateTime? ReviewedAt,
+    decimal? ActualMaterialUsed,
+    decimal? EstimatedMaterialUsed
 );
 
 public record SubmitWorkDto(int BatchId, int WorkshopId, int Quantity, List<string> PhotoUrls);
 
-public record ApproveWorkDto(int WorkId);
+public record ApproveWorkDto(int WorkId, decimal ActualMaterialUsed, string? Notes);
 
-public record RejectWorkDto(int WorkId, string RejectionNotes, List<string> PhotoUrls);
+public record RejectWorkDto(int WorkId, string RejectionNotes, decimal ActualMaterialUsed, List<string> PhotoUrls);

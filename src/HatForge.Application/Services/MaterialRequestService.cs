@@ -330,6 +330,16 @@ public class MaterialRequestService : IMaterialRequestService
         request.FulfilledAt = DateTime.UtcNow;
         _unitOfWork.MaterialRequests.Update(request);
 
+        var bw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
+            x => x.BatchId == request.BatchId && x.WorkshopId == targetWorkshopId);
+        var totalDelivered = items.Where(i => i.ActualQuantity.HasValue)
+            .Sum(i => i.ActualQuantity!.Value);
+        if (bw != null && totalDelivered > 0)
+        {
+            bw.InitialMaterialQty += totalDelivered;
+            _unitOfWork.BatchWorkshops.Update(bw);
+        }
+
         MaterialRequest? nextRequest = null;
         if (stillShort.Count > 0)
         {

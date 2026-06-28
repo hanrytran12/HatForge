@@ -4,6 +4,8 @@ namespace HatForge.Tests.Fixtures;
 
 public class NoOpNotificationPublisher : INotificationPublisher
 {
+    public object? LastMaterialLowAlertPayload { get; private set; }
+
     public Task NotifyWorkSubmittedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyWorkApprovedAsync(int batchId, int staffId, object payload) => Task.CompletedTask;
     public Task NotifyWorkRejectedAsync(int batchId, int staffId, object payload) => Task.CompletedTask;
@@ -20,4 +22,9 @@ public class NoOpNotificationPublisher : INotificationPublisher
     public Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, int leadId, object payload)
+    {
+        LastMaterialLowAlertPayload = payload;
+        return Task.CompletedTask;
+    }
 }

@@ -51,7 +51,7 @@ public class BatchWorkflowTests
         Assert.Equal(nameof(WorkStatus.Submitted), work.Status);
 
         // 4. QC approves work
-        var approved = await workService.ApproveWorkAsync(work.Id, qcId: 3);
+        var approved = await workService.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
         Assert.Equal(nameof(WorkStatus.Approved), approved.Status);
 
         // 5. QC of workshop 1 creates a transfer request → server auto-determines next workshop
@@ -76,7 +76,7 @@ public class BatchWorkflowTests
         await ctx.SaveChangesAsync();
         var work2 = await workService.SubmitWorkAsync(
             new SubmitWorkDto(batch.Id, 2, 100, new List<string> { "/uploads/w2.jpg" }), staffId: 6);
-        var approved2 = await workService.ApproveWorkAsync(work2.Id, qcId: 5);
+        var approved2 = await workService.ApproveWorkAsync(new ApproveWorkDto(work2.Id, 0m, null), qcId: 5);
         Assert.Equal(nameof(WorkStatus.Approved), approved2.Status);
 
         // 9. QC of workshop 2 (last) calls transfer → no next workshop → PendingLeadReview
@@ -120,7 +120,7 @@ public class BatchWorkflowTests
             new SubmitWorkDto(batch.Id, 1, 50, new List<string> { "/uploads/x.jpg" }), staffId: 2);
 
         var rejected = await workService.RejectWorkAsync(
-            new RejectWorkDto(work.Id, "Wrong fabric color", new List<string>()), qcId: 3);
+            new RejectWorkDto(work.Id, "Wrong fabric color", 0m, new List<string>()), qcId: 3);
 
         Assert.Equal(nameof(WorkStatus.Rejected), rejected.Status);
         Assert.Equal("Wrong fabric color", rejected.RejectionNotes);
