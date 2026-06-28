@@ -59,7 +59,7 @@ public class WorkService : IWorkService
         if (workshopBw.RequiresMaterials
             && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed < estimatedUsage)
             throw new BusinessRuleException(
-                $"Không đủ nguyên vật liệu. Cần {estimatedUsage}m nhưng chỉ còn {workshopBw.InitialMaterialQty - workshopBw.MaterialUsed}m");
+                $"Không đủ nguyên vật liệu. Cần {Math.Round(estimatedUsage, 0, MidpointRounding.AwayFromZero)}m nhưng chỉ còn {Math.Round(workshopBw.InitialMaterialQty - workshopBw.MaterialUsed, 0, MidpointRounding.AwayFromZero)}m");
 
         // Workshops after the first in the chain must wait for a transfer from the previous workshop
         if (workshopBw.OrderIndex > 0)
