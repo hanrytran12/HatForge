@@ -14,6 +14,9 @@ public class TransferRequest
     public DateTime? ApprovedAt { get; set; }
     public int? ConfirmedByQCId { get; set; }
     public DateTime? ConfirmedAt { get; set; }
+    public int? ReceivedUsableQuantity { get; set; }
+    public int? ReceivedDefectiveQuantity { get; set; }
+    public string? ReceiptInspectionNotes { get; set; }
     public TransferStatus Status { get; set; } = TransferStatus.Pending;
 
     public Batch Batch { get; set; } = null!;

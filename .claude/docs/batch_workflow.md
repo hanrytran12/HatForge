@@ -67,7 +67,7 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Guards (throws `BusinessRuleException` if violated):**
 - Batch must be `InProduction`
 - Staff must belong to a workshop in the batch's chain
-- If not the first workshop: a `TransferRequest` with status `Transferred` must exist for this workshop (receipt must have been confirmed)
+- If not the first workshop: a `TransferRequest` with status `Transferred` must exist for this workshop (receipt must have been confirmed), and normal work quantity cannot exceed the received usable quantity
 - If `Workshop.RequiresMaterials = true`: `BatchWorkshop.MaterialsReceived` must be `true`
 - No existing pending/approved Work for this batch+workshop combination
 
@@ -117,10 +117,13 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Actor:** QCWorkshop (destination workshop)  
 **Endpoint:** `PUT /api/transfer/confirm-receipt`  
 **Effect:**
+- Destination QC records `ReceivedUsableQuantity` and `ReceivedDefectiveQuantity`
+- Receipt quantities must add up to the approved transfer quantity
 - Sets `TransferRequest.Status = Transferred`
 - Marks source `BatchWorkshop.IsCompleted = true`
 - Status → `InProduction`
-- Notification: Staff in destination workshop notified (`WorkCanBegin`)
+- Notification: Staff in destination workshop notified (`WorkCanBegin`) with receipt quantities
+- Destination workshop non-rework submissions are capped by `ReceivedUsableQuantity`
 
 **Constraint:** Transfer must be `Approved`. Caller must belong to the destination workshop.
 

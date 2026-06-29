@@ -42,7 +42,8 @@ public class WorkServiceTests
 
     private static async Task<int> SeedBatchWithTwoWorkshopsAsync(
         HatForge.Infrastructure.Data.AppDbContext ctx,
-        bool withTransfer = false)
+        bool withTransfer = false,
+        int? receivedUsableQuantity = null)
     {
         var batch = new Batch
         {
@@ -74,7 +75,9 @@ public class WorkServiceTests
                 FromWorkshopId = 1,
                 ToWorkshopId = 2,
                 Status = TransferStatus.Transferred,
-                ApprovedAt = DateTime.UtcNow
+                ApprovedAt = DateTime.UtcNow,
+                ReceivedUsableQuantity = receivedUsableQuantity,
+                ReceivedDefectiveQuantity = receivedUsableQuantity.HasValue ? 100 - receivedUsableQuantity.Value : null
             });
             await ctx.SaveChangesAsync();
         }
@@ -400,7 +403,7 @@ public class WorkServiceTests
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
-        var batchId = await SeedBatchWithTwoWorkshopsAsync(ctx, withTransfer: true);
+        var batchId = await SeedBatchWithTwoWorkshopsAsync(ctx, withTransfer: true, receivedUsableQuantity: 10);
         var uow = TestDataFactory.CreateUnitOfWork(ctx);
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
@@ -415,6 +418,76 @@ public class WorkServiceTests
             new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10);
 
         Assert.Equal(nameof(WorkStatus.Submitted), result.Status);
+    }
+
+    [Fact]
+    public async Task SubmitWork_SecondWorkshop_ExceedingReceivedUsableQuantity_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithTwoWorkshopsAsync(ctx, withTransfer: true, receivedUsableQuantity: 9);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        ctx.Users.Add(new HatForge.Domain.Entities.User
+        {
+            Id = 10, Email = "staff2@hf.com", Name = "Staff2",
+            Role = UserRole.Staff, WorkshopId = 2, PasswordHash = "x"
+        });
+        await ctx.SaveChangesAsync();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10));
+    }
+
+    [Fact]
+    public async Task SubmitWork_SecondWorkshop_UsesCumulativeReceivedUsableQuantity()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithTwoWorkshopsAsync(ctx, withTransfer: true, receivedUsableQuantity: 15);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        ctx.Users.Add(new HatForge.Domain.Entities.User
+        {
+            Id = 10, Email = "staff2@hf.com", Name = "Staff2",
+            Role = UserRole.Staff, WorkshopId = 2, PasswordHash = "x"
+        });
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 11, workshopId: 2));
+        await ctx.SaveChangesAsync();
+
+        var first = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10);
+        await service.ApproveWorkAsync(new ApproveWorkDto(first.Id, 0m, null), qcId: 11);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 2, 6, false, new List<string> { "/uploads/p2.jpg" }), staffId: 10));
+    }
+
+    [Fact]
+    public async Task SubmitWork_Rework_DoesNotConsumeAdditionalReceivedUsableInput()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithTwoWorkshopsAsync(ctx, withTransfer: true, receivedUsableQuantity: 10);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        ctx.Users.Add(new HatForge.Domain.Entities.User
+        {
+            Id = 10, Email = "staff2@hf.com", Name = "Staff2",
+            Role = UserRole.Staff, WorkshopId = 2, PasswordHash = "x"
+        });
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 11, workshopId: 2));
+        await ctx.SaveChangesAsync();
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 2, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 10);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Need repair", 0, 10, 0, 0m, new List<string>()), qcId: 11);
+
+        var rework = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 2, 10, true, new List<string> { "/uploads/rework.jpg" }), staffId: 10);
+
+        Assert.True(rework.IsRework);
+        Assert.Equal(10, rework.Quantity);
     }
 
     [Fact]

@@ -400,6 +400,16 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int>("FromWorkshopId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("ReceivedDefectiveQuantity")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReceiptInspectionNotes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int?>("ReceivedUsableQuantity")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 

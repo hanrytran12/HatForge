@@ -234,10 +234,14 @@ public class TransferServiceTests
 
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
         await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
-        var result = await service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 5);
+        var result = await service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id, 8, 2, "2 lỗi"), qcId: 5);
 
         Assert.Equal(nameof(TransferStatus.Transferred), result.Status);
         Assert.Equal(5, result.ConfirmedByQCId);
+        Assert.Equal(8, result.ReceivedUsableQuantity);
+        Assert.Equal(2, result.ReceivedDefectiveQuantity);
+        Assert.Equal(2, result.ReceiptDiscrepancyQuantity);
+        Assert.Equal("2 lỗi", result.ReceiptInspectionNotes);
 
         var fromBw = await uow.BatchWorkshops.FirstOrDefaultAsync(
             x => x.BatchId == batchId && x.WorkshopId == 1);
@@ -257,7 +261,7 @@ public class TransferServiceTests
         var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 5));
+            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id, 10, 0), qcId: 5));
     }
 
     [Fact]
@@ -273,6 +277,43 @@ public class TransferServiceTests
 
         // QC id 3 belongs to workshop 1, not the destination workshop 2
         await Assert.ThrowsAsync<ForbiddenException>(() =>
-            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id), qcId: 3));
+            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id, 10, 0), qcId: 3));
+    }
+
+    [Fact]
+    public async Task ConfirmReceipt_WhenReceiptQuantitiesDoNotMatchApprovedQuantity_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 5, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedChainAsync(ctx, firstCompleted: false);
+        var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
+        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id, 7, 2), qcId: 5));
+    }
+
+    [Fact]
+    public async Task ConfirmReceipt_AllDefective_AllowsZeroUsable()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 5, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedChainAsync(ctx, firstCompleted: false);
+        var service = new TransferService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var transfer = await service.CreateTransferRequestAsync(new CreateTransferDto(batchId), qcId: 3);
+        await service.ApproveTransferAsync(new ApproveTransferDto(transfer.Transfer!.Id), leadId: 1);
+        var result = await service.ConfirmReceiptAsync(new ConfirmReceiptDto(transfer.Transfer!.Id, 0, 10), qcId: 5);
+
+        Assert.Equal(nameof(TransferStatus.Transferred), result.Status);
+        Assert.Equal(0, result.ReceivedUsableQuantity);
+        Assert.Equal(10, result.ReceivedDefectiveQuantity);
+        Assert.Equal(10, result.ReceiptDiscrepancyQuantity);
     }
 }

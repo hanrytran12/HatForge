@@ -126,9 +126,9 @@ Unique index: `(BatchId, WorkshopId)`
 | CreatedAt | DateTime | |
 | ApprovedAt | DateTime? | |
 | ConfirmedAt | DateTime? | |
-| TransferNote | string? | |
-| ApprovalNote | string? | |
-| ConfirmationNote | string? | |
+| ReceivedUsableQuantity | int? | Set by destination QC on receipt; caps downstream non-rework work quantity |
+| ReceivedDefectiveQuantity | int? | Set by destination QC on receipt; unusable items found during inspection |
+| ReceiptInspectionNotes | string? | Max 500 |
 
 ### MaterialDelivery
 | Property | Type | Notes |

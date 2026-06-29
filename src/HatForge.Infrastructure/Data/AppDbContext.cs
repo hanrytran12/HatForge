@@ -109,6 +109,7 @@ public class AppDbContext : DbContext
 
         b.Entity<TransferRequest>(e =>
         {
+            e.Property(x => x.ReceiptInspectionNotes).HasMaxLength(500);
             e.HasOne(x => x.Batch)
                 .WithMany(x => x.TransferRequests)
                 .HasForeignKey(x => x.BatchId)
