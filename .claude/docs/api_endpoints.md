@@ -17,7 +17,7 @@ No auth required.
 ```
 **Response `data`:**
 ```json
-{ "token": "string", "userId": int, "name": "string", "role": "string", "workshopId": int|null }
+{ "token": "string", "userId": int, "name": "string", "email": "string", "role": "string", "workshopId": int|null }
 ```
 
 ### POST `/api/auth/register`
@@ -27,7 +27,7 @@ No auth required.
 ```json
 { "name": "string", "email": "string", "password": "string", "role": int, "workshopId": int|null }
 ```
-**Response `data`:** same shape as login response.
+**Response `data`:** user DTO (same shape minus `token`).
 
 ---
 
@@ -36,7 +36,7 @@ No auth required.
 ### POST `/api/batch` — Role: Admin
 **Request:**
 ```json
-{ "hatModelId": int, "assignedLeadId": int }
+{ "hatModelId": int, "targetQuantity": int, "startDate": "datetime", "endDate": "datetime", "assignToLeadId": int }
 ```
 **Response `data`:** `BatchDto`
 
@@ -44,17 +44,18 @@ No auth required.
 **Request:**
 ```json
 {
-  "plannedStartDate": "datetime",
-  "plannedEndDate": "datetime",
   "workshops": [
     {
       "workshopId": int,
-      "orderIndex": int,
+      "orderIndex": int,                  // server normalizes to 0-based sequential
+      "requiresMaterials": bool,
       "startDate": "datetime",
       "endDate": "datetime",
-      "materials": [
-        { "materialName": "string", "plannedQuantity": decimal, "unit": "string" }
-      ]
+      "materialDeliveryDate": "datetime?",  // required when requiresMaterials = true
+      "materialItems": [                    // required when requiresMaterials = true
+        { "materialName": "string", "plannedQuantity": int }
+      ],
+      "estimatedMetersPerUnit": decimal      // required (>0) when requiresMaterials = true
     }
   ]
 }
@@ -62,13 +63,19 @@ No auth required.
 **Response `data`:** `BatchDto`
 
 ### GET `/api/batch/my` — Role: Lead
-**Response `data`:** `BatchDto[]`
+**Response `data`:** `BatchListDto[]`
+
+### GET `/api/batch/pending-gate-qc` — Role: QCGate
+**Response `data`:** `BatchListDto[]`
 
 ### GET `/api/batch` — Any auth
-**Response `data`:** `BatchDto[]`
+**Response `data`:** `BatchListDto[]`
 
 ### GET `/api/batch/{id}` — Any auth
-**Response `data`:** `BatchDto` (includes `BatchWorkshops`, `MaterialDeliveries`)
+**Response `data`:** `BatchDto` (includes `BatchWorkshops` with material budget fields)
+
+### GET `/api/batch/{id}/final-summary` — Role: Lead, QCGate
+**Response `data`:** `BatchFinalSummaryDto` (per-workshop work counts + material budget, transfer counts by status, material request counts by status)
 
 ### PUT `/api/batch/{id}/workshops/{workshopId}/complete` — Role: QCGate, Lead
 **Response `data`:** `BatchDto`
@@ -77,7 +84,7 @@ No auth required.
 **Response `data`:** `BatchDto`
 
 ### PUT `/api/batch/{id}/gate-confirm` — Role: QCGate
-**Response `data`:** `BatchDto`
+**Response `data`:** `BatchDto` (with `CompletedQuantity` auto-computed from the last workshop's approved work)
 
 ---
 
@@ -91,17 +98,15 @@ No auth required.
 | batchId | int |
 | workshopId | int |
 | quantity | int |
-| notes | string (optional) |
-| photos | IFormFile[] (optional, max size enforced by Cloudinary) |
-
-Allowed photo types: `.jpg`, `.jpeg`, `.png`, `.webp`
+| isRework | bool |
+| photos | IFormFile[] (≥1, allowed: `.jpg`, `.jpeg`, `.png`, `.webp`) |
 
 **Response `data`:** `WorkDto`
 
 ### PUT `/api/work/approve` — Role: QCWorkshop
 **Request:**
 ```json
-{ "workId": int, "notes": "string (optional)" }
+{ "workId": int, "actualMaterialUsed": decimal, "notes": "string (optional, currently unused)" }
 ```
 **Response `data`:** `WorkDto`
 
@@ -112,7 +117,13 @@ Allowed photo types: `.jpg`, `.jpeg`, `.png`, `.webp`
 |---|---|
 | workId | int |
 | rejectionNotes | string (required, max 500) |
+| passedQuantity | int |
+| repairableQuantity | int |
+| unrepairableQuantity | int |
+| actualMaterialUsed | decimal |
 | photos | IFormFile[] (optional) |
+
+`passedQuantity + repairableQuantity + unrepairableQuantity` must equal the submitted `Quantity`.
 
 **Response `data`:** `WorkDto`
 
@@ -133,7 +144,15 @@ Allowed photo types: `.jpg`, `.jpeg`, `.png`, `.webp`
 ```
 Server auto-resolves `toWorkshopId` from `OrderIndex`. Do not pass a target workshop.
 
-**Response `data`:** `TransferRequestDto` | null (null if last workshop → batch goes to PendingLeadReview directly)
+**Response `data`:** `CreateTransferResultDto`:
+```json
+{
+  "isFinalWorkshop": bool,            // true when no next workshop exists
+  "transfer": TransferRequestDto|null,
+  "batchStatus": "string"             // current batch status after the operation
+}
+```
+When `isFinalWorkshop = true`, the transfer is not created and the batch moves directly to `PendingLeadReview`.
 
 ### PUT `/api/transfer/approve` — Role: Lead
 **Request:**
@@ -149,10 +168,12 @@ Server auto-resolves `toWorkshopId` from `OrderIndex`. Do not pass a target work
   "transferId": int,
   "receivedUsableQuantity": int,
   "receivedDefectiveQuantity": int,
-  "receiptInspectionNotes": "string (optional)"
+  "receiptInspectionNotes": "string (optional, max 500)"
 }
 ```
-**Response `data`:** `TransferRequestDto` including `approvedQuantity`, `receivedUsableQuantity`, `receivedDefectiveQuantity`, `receiptDiscrepancyQuantity`, and `qualityIssues`.
+`receivedUsableQuantity + receivedDefectiveQuantity` must equal the approved transfer quantity (= sum of source's `Work.PassedQuantity`).
+
+**Response `data`:** `TransferRequestDto` including `approvedQuantity`, `receivedUsableQuantity`, `receivedDefectiveQuantity`, `receiptDiscrepancyQuantity = approved - receivedUsable`, and `qualityIssues` (source rejections with `UnrepairableQuantity > 0`).
 
 ### GET `/api/transfer/pending` — Role: Lead
 **Response `data`:** `TransferRequestDto[]`
@@ -175,11 +196,54 @@ Returns unconfirmed deliveries for the caller's workshop.
 {
   "deliveryId": int,
   "items": [
-    { "itemId": int, "actualQuantity": decimal }
+    { "itemId": int, "actualQuantity": int }
   ]
 }
 ```
 **Response `data`:** `MaterialDeliveryDto`
+
+If the workshop is the first in the batch chain and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
+
+---
+
+## Material Request — `/api/material-request`
+
+### GET `/api/material-request/pending` — Role: Lead
+**Response `data`:** `MaterialRequestDto[]` (filtered to caller's assigned batches)
+
+### GET `/api/material-request/batch/{batchId}` — Any auth
+**Response `data`:** `MaterialRequestDto[]`
+
+### PUT `/api/material-request/{id}/approve` — Role: Lead
+**Response `data`:** `MaterialRequestDto`
+
+### POST `/api/material-request/ad-hoc` — Role: QCWorkshop
+**Request:**
+```json
+{
+  "batchId": int,
+  "workshopId": int,
+  "reason": "string (required, max 500)",
+  "items": [
+    { "materialName": "string", "unit": "string", "requestedQuantity": int }
+  ]
+}
+```
+Allowed only for the first workshop in the chain whose `Workshop.RequiresMaterials = true`, while the batch is in `InProduction`, `UnderQCReview`, `ReadyForTransfer`, or `PendingLeadReview`. Blocked while a prior ad-hoc request is still `Pending` or `Approved`.
+
+**Response `data`:** `MaterialRequestDto`
+
+### PUT `/api/material-request/{id}/confirm` — Role: QCWorkshop
+**Request:**
+```json
+{
+  "requestId": int,                    // must match the route id
+  "items": [
+    { "itemId": int, "actualQuantity": int }
+  ]
+}
+```
+**Response `data`:** `MaterialRequestDto`. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
 
 ---
 
@@ -189,13 +253,13 @@ Returns unconfirmed deliveries for the caller's workshop.
 **Response `data`:** `NotificationDto[]`
 
 ### GET `/api/notification/unread-count` — Any auth
-**Response `data`:** `int`
+**Response `data`:** `{ "count": int }`
 
 ### PUT `/api/notification/{id}/read` — Any auth
-**Response `data`:** `NotificationDto`
+**Response `data`:** `{ }` (empty object on success)
 
 ### PUT `/api/notification/read-all` — Any auth
-**Response `data`:** `bool`
+**Response `data`:** `{ }`
 
 ---
 

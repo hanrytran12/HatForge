@@ -5,9 +5,11 @@
 | Tool | Version | Purpose |
 |---|---|---|
 | xUnit | 2.9.3 | Test runner |
-| Moq | 4.20.72 | Mocking |
+| Moq | 4.20.72 | Mocking (declared but unit tests primarily hand-roll fakes) |
 | EF Core InMemory | 10.0.9 | In-process DB per test |
 | FluentValidation.TestHelper | 12.1.1 | Validator unit tests |
+| Microsoft.NET.Test.Sdk | 17.14.1 | Test host |
+| xunit.runner.visualstudio | 3.1.4 | VS test discovery |
 | coverlet.collector | 6.0.4 | Code coverage |
 
 ---
@@ -17,18 +19,19 @@
 ```
 src/HatForge.Tests/
 ├── Fixtures/
-│   ├── TestDataFactory.cs          — creates AppDbContext + UnitOfWork, seed helpers
+│   ├── TestDataFactory.cs           — AppDbContext + UnitOfWork, seed helpers
 │   └── NoOpNotificationPublisher.cs — no-op INotificationPublisher for service isolation
 ├── Unit/
-│   ├── BatchServiceTests.cs        — 7 tests
-│   ├── WorkServiceTests.cs         — 8 tests
-│   ├── TransferServiceTests.cs     — 8 tests
-│   └── ValidatorTests.cs           — 10 tests
+│   ├── BatchServiceTests.cs         — 7 tests
+│   ├── WorkServiceTests.cs          — 19 tests
+│   ├── TransferServiceTests.cs      — 11 tests
+│   ├── MaterialRequestServiceTests.cs — 16 tests
+│   └── ValidatorTests.cs            — 12 tests
 └── Integration/
-    └── BatchWorkflowTests.cs       — 2 tests (full end-to-end + rejection flow)
+    └── BatchWorkflowTests.cs        — 3 end-to-end tests
 ```
 
-Total: 35 tests, 0 failures (as of latest run).
+Approximate total: ~70 tests.
 
 ---
 
@@ -54,23 +57,22 @@ This prevents state bleed between tests. Never share a context instance across t
 
 | Method | Creates |
 |---|---|
-| `CreateLead(ctx)` | User with Role=Lead, no workshop |
-| `CreateStaff(ctx, workshopId)` | User with Role=Staff, assigned to workshop |
-| `CreateQcWorkshop(ctx, workshopId)` | User with Role=QCWorkshop |
-| `CreateAdmin(ctx)` | User with Role=Admin |
-| `CreateQcGate(ctx)` | User with Role=QCGate |
-| `CreateWorkshop(ctx, requiresMaterials)` | Workshop entity |
-| `CreateHatModel(ctx)` | HatModel entity |
+| `CreateContext()` | AppDbContext backed by a fresh InMemory DB |
+| `CreateUnitOfWork(ctx)` | Wraps the context in `UnitOfWork` |
+| `Lead(id)` / `Staff(id, workshopId)` / `QcWorkshop(id, workshopId)` / `Admin(id)` / `QcGate(id)` | User with role baked in |
+| `Workshop(id, requiresMaterials)` | Workshop entity |
+| `HatModel(id)` | HatModel entity |
+| `SeedBaseAsync(ctx)` | Seeds 1 Lead + 1 Staff + 1 QC + 1 Admin, 3 Workshops (workshop 3 requires materials), 1 HatModel |
 
-Always call `ctx.SaveChangesAsync()` after seeding before instantiating services.
+Always call `SeedBaseAsync(ctx)` (or equivalent inserts) followed by `await ctx.SaveChangesAsync()` before instantiating services.
 
 ---
 
 ## NoOpNotificationPublisher
 
-Implements `INotificationPublisher` with all methods returning `Task.CompletedTask`.  
-Inject instead of `SignalRNotificationPublisher` in all unit and integration tests.  
-This isolates service logic from SignalR and avoids DB writes for notifications in unit tests.
+Implements every `INotificationPublisher` method as a no-op. The single exception is `NotifyMaterialLowAlertAsync`, which captures the last payload to `LastMaterialLowAlertPayload` so unit tests can assert on alert content (used by the `WorkServiceTests` material-low scenarios).
+
+Inject instead of `SignalRNotificationPublisher` in all unit and integration tests. This isolates service logic from SignalR and avoids DB writes for notifications in unit tests.
 
 ---
 
@@ -79,58 +81,85 @@ This isolates service logic from SignalR and avoids DB writes for notifications 
 ### BatchServiceTests
 - Create batch — generates correct `BatchNumber` format
 - BatchNumber sequence increments correctly within same day
+- Create batch with end-before-start → throws `BusinessRuleException`
 - Plan batch with workshops and materials
-- Plan batch without materials (workshops that don't require them)
-- Date validation (end before start → throws)
-- Wrong lead guard (non-assigned lead → throws `ForbiddenException`)
-- Invalid lead ID guard
+- Plan batch with wrong lead → throws `ForbiddenException`
+- Plan batch with `RequiresMaterials` but no delivery date → throws `BusinessRuleException`
+- Create batch with invalid lead ID → throws `NotFoundException`
 
 ### WorkServiceTests
-- Submit work — first workshop (no transfer prerequisite)
-- Submit work — second workshop (requires confirmed transfer receipt)
-- Submit work blocked when materials not received
-- Submit work blocked when duplicate pending submission exists
-- Role guard (non-Staff → throws)
-- Approve work — happy path
-- Reject work — happy path with notes
-- Double-approve guard (already approved → throws)
+- Submit work — first workshop, happy path (staff only, no materials gate)
+- Submit work — non-Staff caller → `ForbiddenException`
+- Submit work — `RequiresMaterials` but not received → `BusinessRuleException`
+- Submit work — pre-charges `EstimatedMaterialUsed` against `MaterialUsed`
+- Submit work — insufficient estimated material → `BusinessRuleException` with rounded-meters message
+- Reject work — does not refund pre-charged estimate; reconciliation lands at `ActualMaterialUsed`
+- Reject work — material low/out triggers `MaterialLowAlert` with delivered-material summary
+- Approve work — reconciles estimate to `ActualMaterialUsed`
+- Approve work — material low → alert with delivered-material summary
+- Reject work — QC quantity breakdown (`Passed + Repairable + Unrepairable = Quantity`) allows repairable-only resubmission; rework submissions don't consume `ReceivedUsableQuantity`
+- Reject work — quantities don't sum to `Quantity` → throws
+- Submit work — second workshop without transferred status → throws
+- Submit work — second workshop with transferred → succeeds; receipt usable cap enforced
+- Submit work — exceeding `ReceivedUsableQuantity` after cumulative non-rework submissions → throws
+- Approve work / reject work — happy path
+- Approve already-approved → throws
 
 ### TransferServiceTests
-- Auto-determine next workshop by `OrderIndex`
-- Guard: no approved work → throws
-- Guard: workshop already completed → throws
-- Guard: wrong workshop QC → throws
-- Lead approves transfer — happy path
-- Non-lead approve attempt → throws
-- Confirm receipt — happy path (marks source completed, batch → InProduction)
-- Confirm receipt before approval → throws
-- Confirm receipt from wrong workshop → throws
+- `CreateTransferRequestAsync` — auto-determines next workshop by `OrderIndex`
+- Includes `UnrepairableQuantity > 0` rejections in `QualityIssues`
+- Allows partial-pass / partial-unrepairable rejects when no `RepairableQuantity` remains
+- Blocks creation while `RepairableQuantity` remains unsubmitted
+- No approved work → throws
+- Source already `IsCompleted` → throws
+- QC of non-chain workshop → `NotFoundException`
+- `ApproveTransferAsync` — happy path / non-lead → `ForbiddenException`
+- `ConfirmReceiptAsync` — happy path: marks source completed, computes `ReceiptDiscrepancyQuantity`
+- `ConfirmReceiptAsync` — before approval → throws
+- `ConfirmReceiptAsync` — wrong workshop QC → `ForbiddenException`
+- `ConfirmReceiptAsync` — receipt quantities must sum to approved
+- `ConfirmReceiptAsync` — all-defective (`ReceivedUsable = 0`) is allowed
+
+### MaterialRequestServiceTests
+Shortfall flow (auto from delivery confirmation):
+- Single-item short → creates `MaterialRequest` with one item, status `Pending`
+- All items exact → no request created
+- Shortfall on a non-first workshop → no request created
+- Oversupply (actual ≥ planned) → no request created
+- `ApproveAsync` — assigned lead → `Approved`
+- `ApproveAsync` — wrong lead → `ForbiddenException`
+- `ApproveAsync` — already approved → throws
+- `ConfirmAsync` — all satisfied → `Fulfilled`
+- `ConfirmAsync` — still short → auto-creates next round, returns the new pending DTO
+- `ConfirmAsync` — wrong workshop QC → `ForbiddenException`
+- `ConfirmAsync` — beyond max rounds (4th) → throws
+- `GetPendingForLeadAsync` — filters by `AssignedToLeadId`
+- Batch flow unblocked by shortfall (delivery confirmation still flips `MaterialsReceived = true`)
+
+Ad-hoc flow:
+- QC of first materials-requiring workshop creates request with `IsAdHoc = true`, `Round = 1`
+- Non-first workshop → throws
+- Wrong-workshop QC → `ForbiddenException`
+- Non-QC staff → `ForbiddenException`
+- Batch status `Completed` → throws
+- Workshop without `RequiresMaterials` → throws
+- Workshop not in chain → throws
+- Open `Pending` or `Approved` ad-hoc blocks new ones
+- After fulfillment, a new ad-hoc is allowed
+- Full ad-hoc lifecycle (create → approve → confirm) completes
 
 ### ValidatorTests
-- Covers FluentValidation rules for: `CreateBatchRequest`, `PlanBatchRequest`, `SubmitWorkRequest`, `ApproveWorkRequest`, `RejectWorkRequest`, `CreateTransferRequest`, `ApproveTransferRequest`, `ConfirmReceiptRequest`, `ConfirmDeliveryRequest`, `LoginRequest`
+FluentValidation rules: `CreateBatchRequest`, `PlanBatchRequest`, `SubmitWorkRequest`, `RejectWorkRequest`, `CreateTransferRequest`, `ConfirmReceiptRequest` (negative quantities, valid case with notes).
 
 ---
 
 ## Integration Tests (BatchWorkflowTests)
 
-### Full End-to-End Workflow
-Exercises the complete 10-step flow in a single test using a 2-workshop chain:
-1. Admin creates batch
-2. Lead plans with 2 workshops (Cutting→Sewing), Cutting requires materials
-3. QC1 confirms material delivery for Cutting
-4. Staff1 submits work at Cutting
-5. QC1 approves work at Cutting
-6. QC1 creates transfer request (server resolves Sewing as next)
-7. Lead approves transfer
-8. QC2 confirms receipt at Sewing
-9. Staff2 submits work at Sewing
-10. QC2 approves work at Sewing
-11. QC2 creates transfer (last workshop → batch goes to PendingLeadReview)
-12. Lead approves final → PendingGateQC
-13. QC Gate confirms → Completed
+End-to-end coverage of the main state machine:
 
-### Rejection Flow
-Tests that a rejected work correctly resets to `InProduction` and allows Staff to resubmit.
+1. **FullWorkflow_CreatePlanSubmitApproveTransferComplete** — 2-workshop chain, exercises every step through `Completed`, including the last-workshop transfer becoming `PendingLeadReview`.
+2. **TransferReceiptDiscrepancy_CapsDestinationWorkQuantity** — when the destination QC confirms `ReceivedUsableQuantity = 95, ReceivedDefectiveQuantity = 5`, the next workshop cannot submit 100 non-rework items; 95 succeeds.
+3. **RejectionFlow_RejectedWorkRecordsReason** — reject flow stores `RejectionNotes` and sets `Status = Rejected`.
 
 ---
 

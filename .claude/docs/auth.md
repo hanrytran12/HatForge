@@ -18,9 +18,9 @@ For SignalR connections: token passed via query string `?access_token=<token>`
 | `Email` | `User.Email` | `ClaimTypes.Email` |
 | `Name` | `User.Name` | `ClaimTypes.Name` |
 | `Role` | `User.Role.ToString()` | `ClaimTypes.Role` |
-| `workshopId` | `User.WorkshopId ?? 0` | Custom string `"workshopId"` |
+| `workshopId` | `User.WorkshopId?.ToString() ?? ""` | Custom string `"workshopId"` |
 
-⚠️ The `workshopId` claim shape is fixed. `BaseApiController.CurrentWorkshopId` reads it directly. Changing the claim key or value type breaks all role-gated service calls.
+⚠️ The `workshopId` claim shape is fixed. `BaseApiController.CurrentWorkshopId` parses it as `int?` (null when missing). Changing the claim key or value type breaks all role-gated service calls.
 
 ---
 
@@ -30,7 +30,7 @@ All controllers inherit `BaseApiController`, which exposes:
 
 ```csharp
 int CurrentUserId      // parsed from NameIdentifier claim
-int CurrentWorkshopId  // parsed from custom "workshopId" claim (0 if null)
+int? CurrentWorkshopId // parsed from custom "workshopId" claim (null when absent)
 ```
 
 Services receive these values as method parameters — they do not access `IHttpContextAccessor`.
@@ -44,60 +44,100 @@ Services receive these values as method parameters — they do not access `IHttp
 | Admin | 0 | Creates batches, oversees everything. No workshop assignment. |
 | Lead | 1 | Plans workshop chains, approves transfers, does final sign-off. No workshop assignment. |
 | Staff | 2 | Submits work with photos. Must be assigned to a workshop. |
-| QCWorkshop | 3 | Reviews work, initiates transfers, confirms receipts, confirms materials. Must be assigned to a workshop. |
+| QCWorkshop | 3 | Reviews work, initiates transfers, confirms receipts, confirms materials, creates ad-hoc material requests. Must be assigned to a workshop. |
 | QCGate | 4 | Final gate quality confirmation. No workshop assignment. |
 
 ---
 
 ## Authorization Per Endpoint
 
+### AuthController
+| Action | Required Role |
+|---|---|
+| Login | Anonymous |
+| Register | Anonymous |
+
 ### BatchController
 | Action | Required Role |
 |---|---|
-| Create batch | Admin |
-| Plan batch | Lead |
-| Get my batches | Lead |
-| Get all / get by id | Any authenticated |
-| Mark workshop complete | QCGate, Lead |
-| Lead approve final | Lead |
-| Gate confirm | QCGate |
+| `POST /api/batch` | Admin |
+| `PUT /api/batch/{id}/plan` | Lead |
+| `GET /api/batch/my` | Lead |
+| `GET /api/batch/pending-gate-qc` | QCGate |
+| `GET /api/batch` (all) | Any authenticated |
+| `GET /api/batch/{id}` | Any authenticated |
+| `GET /api/batch/{id}/final-summary` | Lead or QCGate |
+| `PUT /api/batch/{id}/workshops/{workshopId}/complete` | QCGate or Lead |
+| `PUT /api/batch/{id}/lead-approve` | Lead |
+| `PUT /api/batch/{id}/gate-confirm` | QCGate |
 
 ### WorkController
 | Action | Required Role |
 |---|---|
-| Submit work | Staff |
-| Approve work | QCWorkshop |
-| Reject work | QCWorkshop |
-| Get works | Any authenticated |
+| `POST /api/work` (submit) | Staff |
+| `PUT /api/work/approve` | QCWorkshop |
+| `PUT /api/work/reject` | QCWorkshop |
+| `GET /api/work/batch/{batchId}` | Any authenticated |
+| `GET /api/work/batch/{batchId}/workshop/{workshopId}` | Any authenticated |
 
 ### TransferController
 | Action | Required Role |
 |---|---|
-| Create transfer request | QCWorkshop |
-| Approve transfer | Lead |
-| Confirm receipt | QCWorkshop |
-| Get pending / awaiting receipt | Lead / QCWorkshop |
+| `POST /api/transfer` | QCWorkshop |
+| `PUT /api/transfer/approve` | Lead |
+| `PUT /api/transfer/confirm-receipt` | QCWorkshop (destination workshop) |
+| `GET /api/transfer/pending` | Lead |
+| `GET /api/transfer/awaiting-receipt` | QCWorkshop |
 
 ### MaterialController
 | Action | Required Role |
 |---|---|
-| Get pending deliveries | QCWorkshop |
-| Confirm delivery | QCWorkshop |
+| `GET /api/material/pending` | QCWorkshop |
+| `PUT /api/material/confirm` | QCWorkshop |
+
+### MaterialRequestController
+| Action | Required Role |
+|---|---|
+| `GET /api/material-request/pending` | Lead |
+| `GET /api/material-request/batch/{batchId}` | Any authenticated |
+| `PUT /api/material-request/{id}/approve` | Lead |
+| `POST /api/material-request/ad-hoc` | QCWorkshop |
+| `PUT /api/material-request/{id}/confirm` | QCWorkshop |
 
 ### NotificationController
-All actions: Any authenticated user (operates on caller's own notifications only).
+All actions: any authenticated user (operates on caller's own notifications only).
 
 ---
 
 ## Password Policy (Registration)
 
-Enforced by FluentValidation:
+Enforced by FluentValidation (`RegisterValidator`):
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
 - At least one digit
 
 Passwords are hashed with BCrypt (BCrypt.Net-Next). Plaintext is never stored or logged.
+
+---
+
+## Seeded Accounts (Development)
+
+`DbSeederHostedService` creates the following accounts on a fresh database:
+
+| Email | Role | Workshop | Password |
+|---|---|---|---|
+| admin@hatforge.com | Admin | — | `Admin123!` |
+| lead@hatforge.com | Lead | — | `Lead123!` |
+| staff@hatforge.com | Staff | 1 (Cutting) | `Staff123!` |
+| staff2@hatforge.com | Staff | 2 (Sewing) | `Staff123!` |
+| staff3@hatforge.com | Staff | 3 (Finishing) | `Staff123!` |
+| qc1@hatforge.com | QCWorkshop | 1 (Cutting) | `Qc123!` |
+| qc2@hatforge.com | QCWorkshop | 2 (Sewing) | `Qc123!` |
+| qc3@hatforge.com | QCWorkshop | 3 (Finishing) | `Qc123!` |
+| gate@hatforge.com | QCGate | — | `Gate123!` |
+
+Seeded workshops: `Cutting` (RequiresMaterials=true), `Sewing` (false), `Finishing` (false).
 
 ---
 
@@ -108,12 +148,13 @@ JWT settings live in `appsettings.json` under the `Jwt` section:
 ```json
 {
   "Jwt": {
-    "Key": "<secret>",
+    "Secret": "<secret>",
     "Issuer": "<issuer>",
-    "Audience": "<audience>",
-    "ExpiryDays": 7
+    "Audience": "<audience>"
   }
 }
 ```
 
-The secret key must be set via environment variable or `appsettings.Development.json` — never commit real secrets to source control.
+Tokens are issued with `Expires = DateTime.UtcNow.AddDays(7)` regardless of `ExpiryDays` configuration (the constant lives in `JwtTokenGenerator.cs`).
+
+The secret must be set via environment variable or `appsettings.Development.json` — never commit real secrets to source control.
