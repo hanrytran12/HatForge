@@ -79,6 +79,17 @@ public class WorkService : IWorkService
                 if (transferReceived == null)
                     throw new BusinessRuleException(
                         "Cannot submit work — batch has not been transferred from the previous workshop yet");
+
+                if (!dto.IsRework)
+                {
+                    var availableInputQuantity = transferReceived.ReceivedUsableQuantity
+                        ?? await GetPassedQuantityAsync(dto.BatchId, previousBw.WorkshopId);
+                    var existingNonReworkQuantity = await GetSubmittedNonReworkQuantityAsync(dto.BatchId, dto.WorkshopId);
+                    var remainingInputQuantity = availableInputQuantity - existingNonReworkQuantity;
+                    if (dto.Quantity > remainingInputQuantity)
+                        throw new BusinessRuleException(
+                            $"Cannot submit {dto.Quantity} items because only {remainingInputQuantity} received usable items remain for this workshop");
+                }
             }
         }
 
@@ -277,6 +288,20 @@ public class WorkService : IWorkService
         }
 
         return remaining;
+    }
+
+    private async Task<int> GetPassedQuantityAsync(int batchId, int workshopId)
+    {
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == batchId && x.WorkshopId == workshopId);
+        return works.Sum(x => x.PassedQuantity);
+    }
+
+    private async Task<int> GetSubmittedNonReworkQuantityAsync(int batchId, int workshopId)
+    {
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == batchId && x.WorkshopId == workshopId && !x.IsRework);
+        return works.Sum(x => x.Quantity);
     }
 
     private async Task<decimal?> ReconcileMaterialUsageAsync(Work work, decimal actualMaterialUsed)

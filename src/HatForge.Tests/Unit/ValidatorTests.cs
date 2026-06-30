@@ -85,4 +85,28 @@ public class ValidatorTests
         var result = v.TestValidate(new CreateTransferDto(0));
         result.ShouldHaveValidationErrorFor(x => x.BatchId);
     }
+
+    [Fact]
+    public void ConfirmReceipt_NegativeUsableQuantity_Invalid()
+    {
+        var v = new ConfirmReceiptValidator();
+        var result = v.TestValidate(new ConfirmReceiptDto(1, -1, 1));
+        result.ShouldHaveValidationErrorFor(x => x.ReceivedUsableQuantity);
+    }
+
+    [Fact]
+    public void ConfirmReceipt_NegativeDefectiveQuantity_Invalid()
+    {
+        var v = new ConfirmReceiptValidator();
+        var result = v.TestValidate(new ConfirmReceiptDto(1, 1, -1));
+        result.ShouldHaveValidationErrorFor(x => x.ReceivedDefectiveQuantity);
+    }
+
+    [Fact]
+    public void ConfirmReceipt_Valid_Passes()
+    {
+        var v = new ConfirmReceiptValidator();
+        var result = v.TestValidate(new ConfirmReceiptDto(1, 9, 1, "1 lỗi"));
+        result.ShouldNotHaveAnyValidationErrors();
+    }
 }

@@ -167,6 +167,17 @@ public class TransferService : ITransferService
         if (qc.WorkshopId != transfer.ToWorkshopId)
             throw new ForbiddenException("You can only confirm receipt for your own workshop");
 
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == transfer.BatchId && x.WorkshopId == transfer.FromWorkshopId);
+        var approvedQuantity = GetPassedQuantity(works);
+        var receivedQuantity = dto.ReceivedUsableQuantity + dto.ReceivedDefectiveQuantity;
+        if (receivedQuantity != approvedQuantity)
+            throw new BusinessRuleException(
+                $"Receipt quantities must add up to approved transfer quantity ({approvedQuantity})");
+
+        transfer.ReceivedUsableQuantity = dto.ReceivedUsableQuantity;
+        transfer.ReceivedDefectiveQuantity = dto.ReceivedDefectiveQuantity;
+        transfer.ReceiptInspectionNotes = dto.ReceiptInspectionNotes;
         transfer.Status = TransferStatus.Transferred;
         transfer.ConfirmedByQCId = qcId;
         transfer.ConfirmedAt = DateTime.UtcNow;
@@ -196,7 +207,10 @@ public class TransferService : ITransferService
         {
             transfer.BatchId,
             TransferId = transfer.Id,
-            transfer.ToWorkshopId
+            transfer.ToWorkshopId,
+            transfer.ReceivedUsableQuantity,
+            transfer.ReceivedDefectiveQuantity,
+            ReceiptDiscrepancyQuantity = approvedQuantity - transfer.ReceivedUsableQuantity
         });
 
         return await MapToDto(transfer.Id);
@@ -239,6 +253,9 @@ public class TransferService : ITransferService
         var works = await _unitOfWork.Works.FindAsync(
             x => x.BatchId == t.BatchId && x.WorkshopId == t.FromWorkshopId);
         var approvedQuantity = GetPassedQuantity(works);
+        var receiptDiscrepancyQuantity = t.ReceivedUsableQuantity.HasValue
+            ? approvedQuantity - t.ReceivedUsableQuantity.Value
+            : (int?)null;
         var qualityIssues = await GetUnrepairableQualityIssuesAsync(t.BatchId, t.FromWorkshopId);
 
         return new TransferRequestDto(
@@ -246,6 +263,8 @@ public class TransferService : ITransferService
             t.FromWorkshopId, t.FromWorkshop?.Name ?? "",
             t.ToWorkshopId, t.ToWorkshop?.Name ?? "",
             approvedQuantity,
+            t.ReceivedUsableQuantity, t.ReceivedDefectiveQuantity,
+            receiptDiscrepancyQuantity, t.ReceiptInspectionNotes,
             t.CreatedAt, t.CreatedByQCId, t.ApprovedByLeadId, t.ApprovedAt,
             t.ConfirmedByQCId, t.ConfirmedAt, t.Status.ToString(),
             qualityIssues);

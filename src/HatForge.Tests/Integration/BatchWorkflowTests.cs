@@ -68,7 +68,7 @@ public class BatchWorkflowTests
 
         // 7. QC of workshop 2 confirms receipt → workshop 1 marked completed
         var received = await transferService.ConfirmReceiptAsync(
-            new ConfirmReceiptDto(transferResult.Transfer.Id), qcId: 5);
+            new ConfirmReceiptDto(transferResult.Transfer.Id, 100, 0), qcId: 5);
         Assert.Equal(nameof(TransferStatus.Transferred), received.Status);
 
         // 8. Staff at workshop 2 submits work, QC approves it
@@ -95,6 +95,48 @@ public class BatchWorkflowTests
         var completed = await batchService.GateConfirmAsync(batch.Id, qcGateId: 7);
         Assert.Equal(nameof(BatchStatus.Completed), completed.Status);
         Assert.NotNull(completed.CompletedAt);
+    }
+
+    [Fact]
+    public async Task TransferReceiptDiscrepancy_CapsDestinationWorkQuantity()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 5, workshopId: 2));
+        ctx.Users.Add(TestDataFactory.Staff(id: 6, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var notifications = new NoOpNotificationPublisher();
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+
+        var batchService = new BatchService(uow, notifications);
+        var workService = new WorkService(uow, notifications);
+        var transferService = new TransferService(uow, notifications);
+
+        var batch = await batchService.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        await batchService.PlanBatchAsync(batch.Id, new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            NoMaterial(1, 0, Start, Start.AddDays(10)),
+            NoMaterial(2, 1, Start.AddDays(11), End)
+        }), 1);
+
+        var work = await workService.SubmitWorkAsync(
+            new SubmitWorkDto(batch.Id, 1, 100, false, new List<string> { "/uploads/w1.jpg" }), staffId: 2);
+        await workService.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 3);
+        var transferResult = await transferService.CreateTransferRequestAsync(new CreateTransferDto(batch.Id), qcId: 3);
+        await transferService.ApproveTransferAsync(new ApproveTransferDto(transferResult.Transfer!.Id), 1);
+
+        var received = await transferService.ConfirmReceiptAsync(
+            new ConfirmReceiptDto(transferResult.Transfer.Id, 95, 5), qcId: 5);
+
+        Assert.Equal(95, received.ReceivedUsableQuantity);
+        Assert.Equal(5, received.ReceivedDefectiveQuantity);
+        Assert.Equal(5, received.ReceiptDiscrepancyQuantity);
+        await Assert.ThrowsAsync<HatForge.Application.Common.BusinessRuleException>(() =>
+            workService.SubmitWorkAsync(new SubmitWorkDto(batch.Id, 2, 100, false, new List<string> { "/uploads/w2.jpg" }), staffId: 6));
+
+        var work2 = await workService.SubmitWorkAsync(
+            new SubmitWorkDto(batch.Id, 2, 95, false, new List<string> { "/uploads/w2-ok.jpg" }), staffId: 6);
+        Assert.Equal(95, work2.Quantity);
     }
 
     [Fact]

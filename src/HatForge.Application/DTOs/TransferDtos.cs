@@ -9,6 +9,10 @@ public record TransferRequestDto(
     int ToWorkshopId,
     string ToWorkshopName,
     int ApprovedQuantity,
+    int? ReceivedUsableQuantity,
+    int? ReceivedDefectiveQuantity,
+    int? ReceiptDiscrepancyQuantity,
+    string? ReceiptInspectionNotes,
     DateTime CreatedAt,
     int? CreatedByQCId,
     int? ApprovedByLeadId,
@@ -45,7 +49,11 @@ public record CreateTransferResultDto(
 
 public record ApproveTransferDto(int TransferId);
 
-public record ConfirmReceiptDto(int TransferId);
+public record ConfirmReceiptDto(
+    int TransferId,
+    int ReceivedUsableQuantity,
+    int ReceivedDefectiveQuantity,
+    string? ReceiptInspectionNotes = null);
 
 public record MaterialDeliveryDto(
     int Id,

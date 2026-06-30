@@ -129,7 +129,7 @@ Allowed photo types: `.jpg`, `.jpeg`, `.png`, `.webp`
 ### POST `/api/transfer` — Role: QCWorkshop
 **Request:**
 ```json
-{ "batchId": int, "fromWorkshopId": int, "transferNote": "string (optional)" }
+{ "batchId": int }
 ```
 Server auto-resolves `toWorkshopId` from `OrderIndex`. Do not pass a target workshop.
 
@@ -138,16 +138,21 @@ Server auto-resolves `toWorkshopId` from `OrderIndex`. Do not pass a target work
 ### PUT `/api/transfer/approve` — Role: Lead
 **Request:**
 ```json
-{ "transferId": int, "approvalNote": "string (optional)" }
+{ "transferId": int }
 ```
 **Response `data`:** `TransferRequestDto`
 
 ### PUT `/api/transfer/confirm-receipt` — Role: QCWorkshop
 **Request:**
 ```json
-{ "transferId": int, "confirmationNote": "string (optional)" }
+{
+  "transferId": int,
+  "receivedUsableQuantity": int,
+  "receivedDefectiveQuantity": int,
+  "receiptInspectionNotes": "string (optional)"
+}
 ```
-**Response `data`:** `TransferRequestDto`
+**Response `data`:** `TransferRequestDto` including `approvedQuantity`, `receivedUsableQuantity`, `receivedDefectiveQuantity`, `receiptDiscrepancyQuantity`, and `qualityIssues`.
 
 ### GET `/api/transfer/pending` — Role: Lead
 **Response `data`:** `TransferRequestDto[]`

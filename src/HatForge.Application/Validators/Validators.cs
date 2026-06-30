@@ -103,6 +103,21 @@ public class CreateTransferValidator : AbstractValidator<CreateTransferDto>
     }
 }
 
+public class ConfirmReceiptValidator : AbstractValidator<ConfirmReceiptDto>
+{
+    public ConfirmReceiptValidator()
+    {
+        RuleFor(x => x.TransferId).GreaterThan(0);
+        RuleFor(x => x.ReceivedUsableQuantity)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("ReceivedUsableQuantity must be greater than or equal to 0");
+        RuleFor(x => x.ReceivedDefectiveQuantity)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("ReceivedDefectiveQuantity must be greater than or equal to 0");
+        RuleFor(x => x.ReceiptInspectionNotes).MaximumLength(500);
+    }
+}
+
 public class ConfirmMaterialRequestValidator : AbstractValidator<ConfirmMaterialRequestDto>
 {
     public ConfirmMaterialRequestValidator()
