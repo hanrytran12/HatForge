@@ -50,7 +50,7 @@ public class BatchController : BaseApiController
     [HttpPut("{id:int}/workshops/{workshopId:int}/complete")]
     [Authorize(Roles = nameof(UserRole.QCGate) + "," + nameof(UserRole.Lead))]
     public async Task<ActionResult<ApiResponse<BatchDto>>> CompleteWorkshop(int id, int workshopId)
-        => Success(await _batchService.MarkWorkshopCompletedAsync(id, workshopId));
+        => Success(await _batchService.MarkWorkshopCompletedAsync(id, workshopId, CurrentUserId));
 
     [HttpPut("{id:int}/lead-approve")]
     [Authorize(Roles = nameof(UserRole.Lead))]

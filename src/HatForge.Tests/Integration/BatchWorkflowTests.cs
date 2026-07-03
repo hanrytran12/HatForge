@@ -8,8 +8,8 @@ namespace HatForge.Tests.Integration;
 
 public class BatchWorkflowTests
 {
-    private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime Start = DateTime.UtcNow.Date.AddDays(1);
+    private static readonly DateTime End = DateTime.UtcNow.Date.AddDays(31);
 
     private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
         => new(workshopId, order, false, start, end, null, null);

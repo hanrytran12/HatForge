@@ -1,6 +1,7 @@
 using HatForge.Application.Common;
 using HatForge.Application.DTOs;
 using HatForge.Application.Services;
+using HatForge.Domain.Entities;
 using HatForge.Domain.Enums;
 using HatForge.Tests.Fixtures;
 using Xunit;
@@ -9,8 +10,8 @@ namespace HatForge.Tests.Unit;
 
 public class BatchServiceTests
 {
-    private static readonly DateTime Start = new(2026, 7, 1, 0, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime End = new(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime Start = DateTime.UtcNow.Date.AddDays(1);
+    private static readonly DateTime End = DateTime.UtcNow.Date.AddDays(31);
 
     // Helper: workshop item without materials
     private static WorkshopPlanItemDto NoMaterial(int workshopId, int order, DateTime start, DateTime end)
@@ -80,7 +81,7 @@ public class BatchServiceTests
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
             NoMaterial(1, 0, Start, Start.AddDays(10)),
-            WithMaterial(2, 1, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
+            WithMaterial(3, 1, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
         });
 
         var result = await service.PlanBatchAsync(batch.Id, plan, leadId: 1);
@@ -120,7 +121,25 @@ public class BatchServiceTests
         var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
-            new(1, 0, true, Start, End, null, null) // RequiresMaterials but missing all material info
+            new(3, 0, true, Start, End, null, null) // RequiresMaterials but missing all material info
+        });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.PlanBatchAsync(batch.Id, plan, leadId: 1));
+    }
+
+    [Fact]
+    public async Task PlanBatch_WhenMaterialRequirementDoesNotMatchWorkshop_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            NoMaterial(3, 0, Start, End)
         });
 
         await Assert.ThrowsAsync<BusinessRuleException>(
@@ -137,5 +156,87 @@ public class BatchServiceTests
 
         await Assert.ThrowsAsync<NotFoundException>(
             () => service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 999)));
+    }
+
+    [Fact]
+    public async Task MarkWorkshopCompleted_ByAssignedLead_WithApprovedWork_Succeeds()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAndWorkAsync(ctx, WorkStatus.Approved, passedQuantity: 10);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var result = await service.MarkWorkshopCompletedAsync(batchId, workshopId: 1, actorId: 1);
+
+        Assert.True(result.Workshops.Single().IsCompleted);
+        Assert.Equal(nameof(BatchStatus.PendingLeadReview), result.Status);
+    }
+
+    [Fact]
+    public async Task MarkWorkshopCompleted_ByWrongLead_ThrowsForbidden()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.Lead(id: 9));
+        await ctx.SaveChangesAsync();
+        var batchId = await SeedBatchWithWorkshopAndWorkAsync(ctx, WorkStatus.Approved, passedQuantity: 10);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.MarkWorkshopCompletedAsync(batchId, workshopId: 1, actorId: 9));
+    }
+
+    [Fact]
+    public async Task MarkWorkshopCompleted_WithPendingWork_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAndWorkAsync(ctx, WorkStatus.Submitted, passedQuantity: 0);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.MarkWorkshopCompletedAsync(batchId, workshopId: 1, actorId: 1));
+    }
+
+    private static async Task<int> SeedBatchWithWorkshopAndWorkAsync(
+        HatForge.Infrastructure.Data.AppDbContext ctx,
+        WorkStatus workStatus,
+        int passedQuantity)
+    {
+        var batch = new Batch
+        {
+            BatchNumber = "B-COMPLETE-001",
+            HatModelId = 1,
+            TargetQuantity = 100,
+            Status = BatchStatus.InProduction,
+            AssignedToLeadId = 1,
+            StartDate = Start,
+            EndDate = End
+        };
+        ctx.Batches.Add(batch);
+        await ctx.SaveChangesAsync();
+
+        ctx.BatchWorkshops.Add(new BatchWorkshop
+        {
+            BatchId = batch.Id,
+            WorkshopId = 1,
+            OrderIndex = 0,
+            RequiresMaterials = false,
+            MaterialsReceived = false,
+            IsCompleted = false,
+            StartDate = Start,
+            EndDate = Start.AddDays(10)
+        });
+        ctx.Works.Add(new Work
+        {
+            BatchId = batch.Id,
+            WorkshopId = 1,
+            StaffId = 2,
+            Quantity = 10,
+            Status = workStatus,
+            PassedQuantity = passedQuantity
+        });
+        await ctx.SaveChangesAsync();
+        return batch.Id;
     }
 }

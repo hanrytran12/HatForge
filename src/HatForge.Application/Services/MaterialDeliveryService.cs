@@ -56,11 +56,20 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         if (dto.Items == null || dto.Items.Count == 0)
             throw new BusinessRuleException("At least one item must be confirmed");
 
+        var deliveryItemIds = delivery.Items.Select(x => x.Id).ToHashSet();
+        var confirmedItemIds = dto.Items.Select(x => x.ItemId).ToList();
+        if (confirmedItemIds.Distinct().Count() != confirmedItemIds.Count)
+            throw new BusinessRuleException("Each material item can only be confirmed once");
+
+        var missingItemIds = deliveryItemIds.Except(confirmedItemIds).ToList();
+        if (missingItemIds.Count > 0)
+            throw new BusinessRuleException("All material delivery items must be confirmed");
+
         // Update actual quantities per item
         foreach (var confirmItem in dto.Items)
         {
-            if (confirmItem.ActualQuantity <= 0)
-                throw new BusinessRuleException($"Actual quantity for item {confirmItem.ItemId} must be greater than 0");
+            if (confirmItem.ActualQuantity < 0)
+                throw new BusinessRuleException($"Actual quantity for item {confirmItem.ItemId} must be greater than or equal to 0");
 
             var item = delivery.Items.FirstOrDefault(x => x.Id == confirmItem.ItemId)
                 ?? throw new NotFoundException($"Material item {confirmItem.ItemId} not found in this delivery");

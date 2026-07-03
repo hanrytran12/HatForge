@@ -20,14 +20,29 @@ public class WorkService : IWorkService
 
     public async Task<WorkDto> SubmitWorkAsync(SubmitWorkDto dto, int staffId)
     {
+        if (dto.BatchId <= 0)
+            throw new BusinessRuleException("Valid batch is required");
+
+        if (dto.WorkshopId <= 0)
+            throw new BusinessRuleException("Valid workshop is required");
+
+        if (dto.Quantity <= 0)
+            throw new BusinessRuleException("Quantity must be greater than 0");
+
+        if (dto.PhotoUrls == null || dto.PhotoUrls.Count == 0)
+            throw new BusinessRuleException("At least one photo is required");
+
+        if (dto.PhotoUrls.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 512))
+            throw new BusinessRuleException("Photo URL is invalid");
+
         var batch = await _unitOfWork.Batches.GetByIdAsync(dto.BatchId)
             ?? throw new NotFoundException("Batch not found");
 
         if (batch.Status == BatchStatus.Assigned)
             throw new BusinessRuleException("Batch has not been planned yet");
 
-        if (batch.Status == BatchStatus.Completed)
-            throw new BusinessRuleException("Batch is already completed");
+        if (batch.Status is BatchStatus.Created or BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+            throw new BusinessRuleException("Batch is not accepting work submissions");
 
         var staff = await _unitOfWork.Users.GetByIdAsync(staffId)
             ?? throw new NotFoundException("Staff not found");
@@ -43,6 +58,9 @@ public class WorkService : IWorkService
             x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId,
             new[] { "Workshop" })
             ?? throw new NotFoundException("Workshop not in this batch");
+
+        if (workshopBw.IsCompleted)
+            throw new BusinessRuleException("Workshop is already completed for this batch");
 
         // Check materials received if workshop requires them
         if (workshopBw.RequiresMaterials && !workshopBw.MaterialsReceived)
@@ -157,6 +175,9 @@ public class WorkService : IWorkService
 
     public async Task<WorkDto> ApproveWorkAsync(ApproveWorkDto dto, int qcId)
     {
+        if (dto.ActualMaterialUsed < 0)
+            throw new BusinessRuleException("ActualMaterialUsed must be greater than or equal to 0");
+
         var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
             ?? throw new NotFoundException("QC user not found");
         if (qc.Role != UserRole.QCWorkshop)
@@ -164,6 +185,15 @@ public class WorkService : IWorkService
 
         var work = await _unitOfWork.Works.GetByIdAsync(dto.WorkId)
             ?? throw new NotFoundException("Work not found");
+
+        if (qc.WorkshopId != work.WorkshopId)
+            throw new ForbiddenException("You can only approve work for your own workshop");
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(work.BatchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+            throw new BusinessRuleException("Batch is not accepting QC reviews");
 
         if (work.Status != WorkStatus.Submitted)
             throw new BusinessRuleException("Work is not in submitted state");
@@ -176,6 +206,9 @@ public class WorkService : IWorkService
         work.RepairableQuantity = 0;
         work.UnrepairableQuantity = 0;
         _unitOfWork.Works.Update(work);
+
+        batch.Status = BatchStatus.ReadyForTransfer;
+        _unitOfWork.Batches.Update(batch);
 
         var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
 
@@ -191,6 +224,20 @@ public class WorkService : IWorkService
 
     public async Task<WorkDto> RejectWorkAsync(RejectWorkDto dto, int qcId)
     {
+        var rejectionPhotoUrls = dto.PhotoUrls ?? new List<string>();
+
+        if (string.IsNullOrWhiteSpace(dto.RejectionNotes) || dto.RejectionNotes.Length > 500)
+            throw new BusinessRuleException("Rejection notes are required and must be 500 characters or fewer");
+
+        if (dto.PassedQuantity < 0 || dto.RepairableQuantity < 0 || dto.UnrepairableQuantity < 0)
+            throw new BusinessRuleException("QC quantities must be greater than or equal to 0");
+
+        if (dto.ActualMaterialUsed < 0)
+            throw new BusinessRuleException("ActualMaterialUsed must be greater than or equal to 0");
+
+        if (rejectionPhotoUrls.Any(x => string.IsNullOrWhiteSpace(x) || x.Length > 512))
+            throw new BusinessRuleException("Photo URL is invalid");
+
         var qc = await _unitOfWork.Users.GetByIdAsync(qcId)
             ?? throw new NotFoundException("QC user not found");
         if (qc.Role != UserRole.QCWorkshop)
@@ -198,6 +245,15 @@ public class WorkService : IWorkService
 
         var work = await _unitOfWork.Works.GetByIdAsync(dto.WorkId)
             ?? throw new NotFoundException("Work not found");
+
+        if (qc.WorkshopId != work.WorkshopId)
+            throw new ForbiddenException("You can only reject work for your own workshop");
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(work.BatchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+            throw new BusinessRuleException("Batch is not accepting QC reviews");
 
         if (work.Status != WorkStatus.Submitted)
             throw new BusinessRuleException("Work is not in submitted state");
@@ -217,11 +273,14 @@ public class WorkService : IWorkService
         work.ActualMaterialUsed = dto.ActualMaterialUsed;
         _unitOfWork.Works.Update(work);
 
+        batch.Status = BatchStatus.InProduction;
+        _unitOfWork.Batches.Update(batch);
+
         var remainingAfter = await ReconcileMaterialUsageAsync(work, dto.ActualMaterialUsed);
 
         await _unitOfWork.SaveChangesAsync();
 
-        foreach (var url in dto.PhotoUrls)
+        foreach (var url in rejectionPhotoUrls)
         {
             await _unitOfWork.WorkPhotos.AddAsync(new WorkPhoto
             {

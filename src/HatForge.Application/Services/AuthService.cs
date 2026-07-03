@@ -2,6 +2,7 @@ using HatForge.Application.DTOs;
 using HatForge.Application.Common;
 using HatForge.Application.Interfaces;
 using HatForge.Domain.Entities;
+using HatForge.Domain.Enums;
 using HatForge.Domain.Interfaces;
 
 namespace HatForge.Application.Services;
@@ -36,6 +37,19 @@ public class AuthService : IAuthService
         var existing = await _unitOfWork.Users.FirstOrDefaultAsync(x => x.Email == dto.Email);
         if (existing != null)
             throw new BusinessRuleException("Email already registered");
+
+        if (dto.Role is UserRole.Staff or UserRole.QCWorkshop)
+        {
+            if (!dto.WorkshopId.HasValue)
+                throw new BusinessRuleException("Workshop is required for Staff and QC Workshop users");
+
+            _ = await _unitOfWork.Workshops.GetByIdAsync(dto.WorkshopId.Value)
+                ?? throw new NotFoundException("Workshop not found");
+        }
+        else if (dto.WorkshopId.HasValue)
+        {
+            throw new BusinessRuleException("Workshop can only be assigned to Staff or QC Workshop users");
+        }
 
         var user = new User
         {

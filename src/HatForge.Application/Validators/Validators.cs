@@ -118,6 +118,23 @@ public class ConfirmReceiptValidator : AbstractValidator<ConfirmReceiptDto>
     }
 }
 
+public class ConfirmMaterialDeliveryValidator : AbstractValidator<ConfirmMaterialDeliveryDto>
+{
+    public ConfirmMaterialDeliveryValidator()
+    {
+        RuleFor(x => x.DeliveryId).GreaterThan(0);
+        RuleFor(x => x.Items)
+            .NotEmpty().WithMessage("At least one item must be confirmed");
+
+        RuleForEach(x => x.Items).ChildRules(i =>
+        {
+            i.RuleFor(x => x.ItemId).GreaterThan(0);
+            i.RuleFor(x => x.ActualQuantity).GreaterThanOrEqualTo(0)
+                .WithMessage("Actual quantity must be greater than or equal to 0");
+        });
+    }
+}
+
 public class ConfirmMaterialRequestValidator : AbstractValidator<ConfirmMaterialRequestDto>
 {
     public ConfirmMaterialRequestValidator()
@@ -129,8 +146,8 @@ public class ConfirmMaterialRequestValidator : AbstractValidator<ConfirmMaterial
         RuleForEach(x => x.Items).ChildRules(i =>
         {
             i.RuleFor(x => x.ItemId).GreaterThan(0);
-            i.RuleFor(x => x.ActualQuantity).GreaterThan(0)
-                .WithMessage("Actual quantity must be greater than 0");
+            i.RuleFor(x => x.ActualQuantity).GreaterThanOrEqualTo(0)
+                .WithMessage("Actual quantity must be greater than or equal to 0");
         });
     }
 }
@@ -174,6 +191,7 @@ public class RegisterValidator : AbstractValidator<RegisterDto>
     public RegisterValidator()
     {
         RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
+        RuleFor(x => x.Role).IsInEnum();
         RuleFor(x => x.Password)
             .NotEmpty()
             .MinimumLength(8).WithMessage("Password must be at least 8 characters")

@@ -30,6 +30,9 @@ public class TransferService : ITransferService
         var batch = await _unitOfWork.Batches.GetByIdAsync(dto.BatchId)
             ?? throw new NotFoundException("Batch not found");
 
+        if (batch.Status is not (BatchStatus.InProduction or BatchStatus.UnderQCReview or BatchStatus.ReadyForTransfer))
+            throw new BusinessRuleException($"Cannot create transfer while batch is in {batch.Status} status");
+
         // Determine fromWorkshopId from QC's workshop
         var fromWorkshopId = qc.WorkshopId.Value;
 

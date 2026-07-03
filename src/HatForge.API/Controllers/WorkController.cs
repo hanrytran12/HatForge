@@ -29,6 +29,15 @@ public class WorkController : BaseApiController
         [FromForm] bool isRework,
         IFormFileCollection photos)
     {
+        if (batchId <= 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("Valid batch is required"));
+
+        if (workshopId <= 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("Valid workshop is required"));
+
+        if (quantity <= 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("Quantity must be greater than 0"));
+
         if (photos == null || photos.Count == 0)
             return BadRequest(ApiResponse<WorkDto>.Fail("At least one photo is required"));
 
@@ -60,6 +69,18 @@ public class WorkController : BaseApiController
         [FromForm] decimal actualMaterialUsed,
         IFormFileCollection photos)
     {
+        if (workId <= 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("Valid work is required"));
+
+        if (string.IsNullOrWhiteSpace(rejectionNotes) || rejectionNotes.Length > 500)
+            return BadRequest(ApiResponse<WorkDto>.Fail("Rejection notes are required and must be 500 characters or fewer"));
+
+        if (passedQuantity < 0 || repairableQuantity < 0 || unrepairableQuantity < 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("QC quantities must be greater than or equal to 0"));
+
+        if (actualMaterialUsed < 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("ActualMaterialUsed must be greater than or equal to 0"));
+
         var photoUrls = new List<string>();
         if (photos != null)
         {
