@@ -101,15 +101,21 @@ public class BatchService : IBatchService
             var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
                 ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
 
-            if (item.RequiresMaterials && item.MaterialDeliveryDate == null)
+            if (item.RequiresMaterials != workshop.RequiresMaterials)
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId}: material requirement must match workshop configuration");
+
+            var requiresMaterials = workshop.RequiresMaterials;
+
+            if (requiresMaterials && item.MaterialDeliveryDate == null)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — MaterialDeliveryDate must be provided");
 
-            if (item.RequiresMaterials && (item.MaterialItems == null || item.MaterialItems.Count == 0))
+            if (requiresMaterials && (item.MaterialItems == null || item.MaterialItems.Count == 0))
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — at least one material item must be provided");
 
-            if (item.RequiresMaterials && item.EstimatedMetersPerUnit <= 0)
+            if (requiresMaterials && item.EstimatedMetersPerUnit <= 0)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — EstimatedMetersPerUnit must be greater than 0");
 
@@ -121,7 +127,7 @@ public class BatchService : IBatchService
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId}: dates must be within batch range ({batch.StartDate:yyyy-MM-dd} – {batch.EndDate:yyyy-MM-dd})");
 
-            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue)
+            if (requiresMaterials && item.MaterialDeliveryDate.HasValue)
             {
                 var deliveryDate = item.MaterialDeliveryDate.Value.Date;
                 if (deliveryDate < batch.StartDate.Date || deliveryDate > item.StartDate.Date)
@@ -138,21 +144,25 @@ public class BatchService : IBatchService
         var orderedWorkshops = dto.Workshops.OrderBy(x => x.OrderIndex).ToList();
         foreach (var (item, index) in orderedWorkshops.Select((w, i) => (w, i)))
         {
+            var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
+                ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
+            var requiresMaterials = workshop.RequiresMaterials;
+
             var bw = new BatchWorkshop
             {
                 BatchId = batchId,
                 WorkshopId = item.WorkshopId,
                 OrderIndex = index,  // always 0-based sequential
-                RequiresMaterials = item.RequiresMaterials,
+                RequiresMaterials = requiresMaterials,
                 MaterialsReceived = false,
                 IsCompleted = false,
                 StartDate = item.StartDate,
                 EndDate = item.EndDate,
-                EstimatedMetersPerUnit = item.RequiresMaterials ? item.EstimatedMetersPerUnit : 0m
+                EstimatedMetersPerUnit = requiresMaterials ? item.EstimatedMetersPerUnit : 0m
             };
             await _unitOfWork.BatchWorkshops.AddAsync(bw);
 
-            if (item.RequiresMaterials && item.MaterialDeliveryDate.HasValue)
+            if (requiresMaterials && item.MaterialDeliveryDate.HasValue)
             {
                 var delivery = new MaterialDelivery
                 {
@@ -232,8 +242,14 @@ public class BatchService : IBatchService
             .ToList();
     }
 
-    public async Task<BatchDto> MarkWorkshopCompletedAsync(int batchId, int workshopId)
+    public async Task<BatchDto> MarkWorkshopCompletedAsync(int batchId, int workshopId, int actorId)
     {
+        var actor = await _unitOfWork.Users.GetByIdAsync(actorId)
+            ?? throw new NotFoundException("User not found");
+
+        if (actor.Role is not (UserRole.Lead or UserRole.QCGate))
+            throw new ForbiddenException("Only Lead or QC Gate can complete workshops");
+
         var bw = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
             x => x.BatchId == batchId && x.WorkshopId == workshopId)
             ?? throw new NotFoundException("BatchWorkshop not found");
@@ -244,8 +260,23 @@ public class BatchService : IBatchService
         var batch = await _unitOfWork.Batches.GetByIdAsync(batchId)
             ?? throw new NotFoundException("Batch not found");
 
+        if (actor.Role == UserRole.Lead && batch.AssignedToLeadId != actorId)
+            throw new ForbiddenException("Only the assigned lead can complete this workshop");
+
         if (batch.Status == BatchStatus.Assigned)
             throw new BusinessRuleException("Batch has not been planned yet. Lead must plan workshops first");
+
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingGateQC)
+            throw new BusinessRuleException("Batch cannot accept workshop completion changes in its current status");
+
+        var works = await _unitOfWork.Works.FindAsync(
+            x => x.BatchId == batchId && x.WorkshopId == workshopId);
+        if (works.Any(x => x.Status == WorkStatus.Submitted))
+            throw new BusinessRuleException("Workshop still has work pending QC review");
+        if (works.Sum(x => x.PassedQuantity) <= 0)
+            throw new BusinessRuleException("Workshop has no passed work yet");
+        if (CalculateRepairableRemaining(works) > 0)
+            throw new BusinessRuleException("Workshop still has repairable rejected work that must be resubmitted");
 
         bw.IsCompleted = true;
         _unitOfWork.BatchWorkshops.Update(bw);
@@ -465,5 +496,23 @@ public class BatchService : IBatchService
         } while (true);
 
         return batchNumber;
+    }
+
+    private static int CalculateRepairableRemaining(IEnumerable<Work> works)
+    {
+        var remaining = 0;
+        foreach (var work in works.OrderBy(x => x.SubmittedDate).ThenBy(x => x.Id))
+        {
+            if (work.IsRework)
+            {
+                var consumedRepairable = Math.Min(remaining, work.Quantity);
+                remaining -= consumedRepairable;
+            }
+
+            if (work.Status == WorkStatus.Rejected)
+                remaining += work.RepairableQuantity;
+        }
+
+        return remaining;
     }
 }

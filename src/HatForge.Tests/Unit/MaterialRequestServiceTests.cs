@@ -125,6 +125,37 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
+    public async Task ConfirmDelivery_MissingDeliveryItem_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var (_, deliveryId, item1, _) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
+
+        var service = CreateDeliveryService(ctx);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.ConfirmDeliveryAsync(new ConfirmMaterialDeliveryDto(
+                deliveryId,
+                new List<ConfirmMaterialItemDto> { new(item1, 400) }), QcId));
+    }
+
+    [Fact]
+    public async Task ConfirmDelivery_ZeroActualQuantity_CreatesShortfallRequest()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
+
+        var service = CreateDeliveryService(ctx);
+
+        await service.ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 0, item2, 100), QcId);
+
+        var request = Assert.Single(await CreateService(ctx).GetByBatchAsync(batchId));
+        Assert.Equal(500, Assert.Single(request.Items).ShortfallQuantity);
+    }
+
+    [Fact]
     public async Task ConfirmDelivery_AllItemsExact_NoMaterialRequest()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -327,6 +358,28 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
+    public async Task ConfirmAsync_MissingRequestItem_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
+
+        await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 400, item2, 90), QcId);
+
+        var pending = (await CreateService(ctx).GetByBatchAsync(batchId)).Single();
+        Assert.Equal(2, pending.Items.Count);
+        var approved = await CreateService(ctx).ApproveAsync(pending.Id, LeadId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).ConfirmAsync(
+                new ConfirmMaterialRequestDto(approved.Id, new List<ConfirmMaterialRequestItemDto>
+                {
+                    new(approved.Items[0].Id, 100)
+                }), QcId));
+    }
+
+    [Fact]
     public async Task ConfirmAsync_ByWrongWorkshop_ThrowsForbidden()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -380,13 +433,22 @@ public class MaterialRequestServiceTests
             }), QcId);
         Assert.Equal(3, r3.Round);
 
-        // Round 3: approve, confirm short → must throw (4th would be round 4 > max 3)
+        // Round 3: approve, confirm short → round 4 (the third supplemental round)
         var a3 = await mrService.ApproveAsync(r3.Id, LeadId);
+        var r4 = await mrService.ConfirmAsync(
+            new ConfirmMaterialRequestDto(a3.Id, new List<ConfirmMaterialRequestItemDto>
+            {
+                new(a3.Items[0].Id, 10)
+            }), QcId);
+        Assert.Equal(4, r4.Round);
+
+        // Round 4: still short → must throw because no more supplemental rounds remain
+        var a4 = await mrService.ApproveAsync(r4.Id, LeadId);
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
             mrService.ConfirmAsync(
-                new ConfirmMaterialRequestDto(a3.Id, new List<ConfirmMaterialRequestItemDto>
+                new ConfirmMaterialRequestDto(a4.Id, new List<ConfirmMaterialRequestItemDto>
                 {
-                    new(a3.Items[0].Id, 10)
+                    new(a4.Items[0].Id, 1)
                 }), QcId));
     }
 

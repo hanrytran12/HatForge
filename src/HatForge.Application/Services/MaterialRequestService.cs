@@ -290,9 +290,6 @@ public class MaterialRequestService : IMaterialRequestService
         if (request.Status != MaterialRequestStatus.Approved)
             throw new BusinessRuleException("Material request must be approved by Lead before fulfillment");
 
-        if (request.Round >= MaxSupplementalRounds + 1)
-            throw new BusinessRuleException($"Maximum supplemental rounds ({MaxSupplementalRounds}) reached");
-
         MaterialDelivery? delivery = null;
         int targetWorkshopId;
         if (request.OriginalDeliveryId is int deliveryId)
@@ -315,12 +312,21 @@ public class MaterialRequestService : IMaterialRequestService
         if (dto.Items == null || dto.Items.Count == 0)
             throw new BusinessRuleException("At least one item must be confirmed");
 
+        var requestItemIds = items.Select(x => x.Id).ToHashSet();
+        var confirmedItemIds = dto.Items.Select(x => x.ItemId).ToList();
+        if (confirmedItemIds.Distinct().Count() != confirmedItemIds.Count)
+            throw new BusinessRuleException("Each material request item can only be confirmed once");
+
+        var missingItemIds = requestItemIds.Except(confirmedItemIds).ToList();
+        if (missingItemIds.Count > 0)
+            throw new BusinessRuleException("All material request items must be confirmed");
+
         var stillShort = new List<(MaterialRequestItem item, int shortfall)>();
 
         foreach (var confirmItem in dto.Items)
         {
-            if (confirmItem.ActualQuantity <= 0)
-                throw new BusinessRuleException($"Actual quantity for item {confirmItem.ItemId} must be greater than 0");
+            if (confirmItem.ActualQuantity < 0)
+                throw new BusinessRuleException($"Actual quantity for item {confirmItem.ItemId} must be greater than or equal to 0");
 
             var item = items.FirstOrDefault(x => x.Id == confirmItem.ItemId)
                 ?? throw new NotFoundException($"Material request item {confirmItem.ItemId} not found");
@@ -331,6 +337,10 @@ public class MaterialRequestService : IMaterialRequestService
             if (confirmItem.ActualQuantity < item.ShortfallQuantity)
                 stillShort.Add((item, item.ShortfallQuantity - confirmItem.ActualQuantity));
         }
+
+        if (stillShort.Count > 0 && request.Round >= MaxSupplementalRounds + 1)
+            throw new BusinessRuleException(
+                $"Maximum supplemental rounds ({MaxSupplementalRounds}) reached — cannot create another request");
 
         request.Status = MaterialRequestStatus.Fulfilled;
         request.FulfilledByQCId = qcId;
@@ -350,10 +360,6 @@ public class MaterialRequestService : IMaterialRequestService
         MaterialRequest? nextRequest = null;
         if (stillShort.Count > 0)
         {
-            if (request.Round >= MaxSupplementalRounds)
-                throw new BusinessRuleException(
-                    $"Maximum supplemental rounds ({MaxSupplementalRounds}) reached — cannot create another request");
-
             nextRequest = new MaterialRequest
             {
                 OriginalDeliveryId = request.OriginalDeliveryId,

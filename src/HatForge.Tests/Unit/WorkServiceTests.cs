@@ -128,6 +128,36 @@ public class WorkServiceTests
     }
 
     [Fact]
+    public async Task SubmitWork_WhenWorkshopCompleted_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        bw.IsCompleted = true;
+        await ctx.SaveChangesAsync();
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+    }
+
+    [Fact]
+    public async Task SubmitWork_WhenBatchPendingLeadReview_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        var batch = ctx.Batches.Single(x => x.Id == batchId);
+        batch.Status = BatchStatus.PendingLeadReview;
+        await ctx.SaveChangesAsync();
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+    }
+
+    [Fact]
     public async Task SubmitWork_WithMaterials_DeductsEstimatedUsageImmediately()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -507,6 +537,22 @@ public class WorkServiceTests
     }
 
     [Fact]
+    public async Task ApproveWork_ByQcOfDifferentWorkshop_ThrowsForbidden()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 11, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 0m, null), qcId: 11));
+    }
+
+    [Fact]
     public async Task RejectWork_ByQc_SetsRejectedWithReason()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -520,6 +566,22 @@ public class WorkServiceTests
 
         Assert.Equal(nameof(WorkStatus.Rejected), result.Status);
         Assert.Equal("Loose stitching", result.RejectionNotes);
+    }
+
+    [Fact]
+    public async Task RejectWork_ByQcOfDifferentWorkshop_ThrowsForbidden()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcWorkshop(id: 11, workshopId: 2));
+        await ctx.SaveChangesAsync();
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() =>
+            service.RejectWorkAsync(new RejectWorkDto(work.Id, "Wrong workshop", 0, 10, 0, 0m, new List<string>()), qcId: 11));
     }
 
     [Fact]
