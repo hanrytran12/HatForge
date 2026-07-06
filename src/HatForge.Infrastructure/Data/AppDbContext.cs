@@ -204,12 +204,14 @@ public class AppDbContext : DbContext
             e.Property(x => x.AdminNotes).HasMaxLength(500);
             e.HasIndex(x => new { x.Type, x.MaterialDeliveryId, x.Status });
             e.HasIndex(x => new { x.Type, x.TransferRequestId, x.Status });
+            e.HasIndex(x => new { x.Type, x.MaterialRequestId, x.Status });
             e.HasIndex(x => new { x.Type, x.BatchId, x.Status });
             e.ToTable(t => t.HasCheckConstraint(
                     "CK_LeadTaskDelegationRequests_ExactlyOneTask",
-                    @"(""Type"" = 0 AND ""MaterialDeliveryId"" IS NOT NULL AND ""TransferRequestId"" IS NULL)
-                      OR (""Type"" = 1 AND ""TransferRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL)
-                      OR (""Type"" = 2 AND ""MaterialDeliveryId"" IS NULL AND ""TransferRequestId"" IS NULL)"));
+                    @"(""Type"" = 0 AND ""MaterialDeliveryId"" IS NOT NULL AND ""TransferRequestId"" IS NULL AND ""MaterialRequestId"" IS NULL)
+                      OR (""Type"" = 1 AND ""TransferRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL AND ""MaterialRequestId"" IS NULL)
+                      OR (""Type"" = 2 AND ""MaterialDeliveryId"" IS NULL AND ""TransferRequestId"" IS NULL AND ""MaterialRequestId"" IS NULL)
+                      OR (""Type"" = 3 AND ""MaterialRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL AND ""TransferRequestId"" IS NULL)"));
             e.HasOne(x => x.Batch)
                 .WithMany()
                 .HasForeignKey(x => x.BatchId)
@@ -222,6 +224,11 @@ public class AppDbContext : DbContext
             e.HasOne(x => x.TransferRequest)
                 .WithMany()
                 .HasForeignKey(x => x.TransferRequestId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.MaterialRequest)
+                .WithMany()
+                .HasForeignKey(x => x.MaterialRequestId)
                 .IsRequired(false)
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.RequestedByLead)

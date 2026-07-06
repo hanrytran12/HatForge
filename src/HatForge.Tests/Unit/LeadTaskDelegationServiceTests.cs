@@ -54,6 +54,48 @@ public class LeadTaskDelegationServiceTests
         return delivery.Id;
     }
 
+    private static async Task<int> SeedMaterialRequestAsync(
+        HatForge.Infrastructure.Data.AppDbContext ctx,
+        MaterialRequestStatus status = MaterialRequestStatus.Approved)
+    {
+        var batch = new Batch
+        {
+            BatchNumber = $"B-MR-DELEGATE-{Guid.NewGuid():N}".Substring(0, 18),
+            HatModelId = 1,
+            TargetQuantity = 100,
+            Status = BatchStatus.InProduction,
+            AssignedToLeadId = LeadId,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30)
+        };
+        ctx.Batches.Add(batch);
+        await ctx.SaveChangesAsync();
+
+        var request = new MaterialRequest
+        {
+            BatchId = batch.Id,
+            WorkshopId = 1,
+            CreatedByQCId = 3,
+            Status = status,
+            ApprovedByLeadId = status == MaterialRequestStatus.Approved ? LeadId : null,
+            ApprovedAt = status == MaterialRequestStatus.Approved ? DateTime.UtcNow : null,
+            Round = 1
+        };
+        ctx.MaterialRequests.Add(request);
+        await ctx.SaveChangesAsync();
+
+        ctx.MaterialRequestItems.Add(new MaterialRequestItem
+        {
+            MaterialRequestId = request.Id,
+            MaterialName = "Wool Felt",
+            Unit = "m",
+            ShortfallQuantity = 50
+        });
+        await ctx.SaveChangesAsync();
+
+        return request.Id;
+    }
+
     private static async Task<int> SeedTransferAsync(HatForge.Infrastructure.Data.AppDbContext ctx)
     {
         var batch = new Batch
@@ -260,6 +302,83 @@ public class LeadTaskDelegationServiceTests
         Assert.Equal(TransferStatus.Approved, transfer!.Status);
         Assert.Equal(LeadId, transfer.ApprovedByLeadId);
         Assert.NotNull(transfer.ApprovedAt);
+    }
+
+    [Fact]
+    public async Task MaterialRequestFulfillmentDelegation_ApprovedByAdmin_AllowsTransportQcToMarkDelivered()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var materialRequestId = await SeedMaterialRequestAsync(ctx);
+        var service = CreateService(ctx);
+
+        var created = await service.CreateAsync(
+            new CreateLeadTaskDelegationDto(
+                LeadTaskDelegationType.MaterialRequestFulfillment,
+                materialRequestId,
+                QcTransportId,
+                "Lead cannot deliver supplemental materials"),
+            LeadId);
+        await service.ApproveAsync(created.Id, AdminId, new ReviewLeadTaskDelegationDto("ok"));
+
+        var completed = await service.MarkMaterialRequestDeliveredAsync(created.Id, QcTransportId);
+
+        Assert.Equal(LeadTaskDelegationType.MaterialRequestFulfillment, completed.Type);
+        Assert.Equal(LeadTaskDelegationStatus.Completed, completed.Status);
+        Assert.Equal(materialRequestId, completed.MaterialRequestId);
+        Assert.Null(completed.MaterialDeliveryId);
+        Assert.Null(completed.TransferRequestId);
+        var materialRequest = await TestDataFactory.CreateUnitOfWork(ctx).MaterialRequests.GetByIdAsync(materialRequestId);
+        Assert.Equal(MaterialRequestStatus.Approved, materialRequest!.Status);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(
+                new CreateLeadTaskDelegationDto(
+                    LeadTaskDelegationType.MaterialRequestFulfillment,
+                    materialRequestId,
+                    QcTransportId,
+                    null),
+                LeadId));
+    }
+
+    [Fact]
+    public async Task CreateMaterialRequestFulfillmentDelegation_WhenRequestNotApproved_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var materialRequestId = await SeedMaterialRequestAsync(ctx, MaterialRequestStatus.Pending);
+        var service = CreateService(ctx);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(
+                new CreateLeadTaskDelegationDto(
+                    LeadTaskDelegationType.MaterialRequestFulfillment,
+                    materialRequestId,
+                    QcTransportId,
+                    null),
+                LeadId));
+    }
+
+    [Fact]
+    public async Task CreateMaterialRequestFulfillmentDelegation_WhenActiveDelegationExists_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var materialRequestId = await SeedMaterialRequestAsync(ctx);
+        var service = CreateService(ctx);
+        var dto = new CreateLeadTaskDelegationDto(
+            LeadTaskDelegationType.MaterialRequestFulfillment,
+            materialRequestId,
+            QcTransportId,
+            null);
+
+        await service.CreateAsync(dto, LeadId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(dto, LeadId));
     }
 
     [Fact]

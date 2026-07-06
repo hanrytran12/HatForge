@@ -117,6 +117,7 @@ Services receive these values as method parameters — they do not access `IHttp
 | `PUT /api/lead-task-delegation/{id}/material-delivered` | QCTransport |
 | `PUT /api/lead-task-delegation/{id}/approve-transfer` | QCTransport |
 | `PUT /api/lead-task-delegation/{id}/approve-final-review` | QCTransport |
+| `PUT /api/lead-task-delegation/{id}/material-request-delivered` | QCTransport |
 
 ### NotificationController
 All actions: any authenticated user (operates on caller's own notifications only).

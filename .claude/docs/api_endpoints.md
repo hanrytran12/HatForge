@@ -245,14 +245,15 @@ Allowed only for the first workshop in the chain whose `Workshop.RequiresMateria
 }
 ```
 **Response `data`:** `MaterialRequestDto`. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
+If the material request has an active QCTransport delegation, QCWorkshop can confirm receipt only after QCTransport marks the request as delivered.
 
 ---
 
 ## Lead Task Delegation — `/api/lead-task-delegation`
 
-Used when the assigned Lead is busy and wants a QC Transport user to perform material delivery, transfer approval, or final batch review. The request must be approved by Admin before QC Transport can execute it.
+Used when the assigned Lead is busy and wants a QC Transport user to perform material delivery, supplemental material delivery, transfer approval, or final batch review. The request must be approved by Admin before QC Transport can execute it.
 
-`LeadTaskDelegationType`: `MaterialDelivery = 0`, `TransferApproval = 1`, `FinalReview = 2`  
+`LeadTaskDelegationType`: `MaterialDelivery = 0`, `TransferApproval = 1`, `FinalReview = 2`, `MaterialRequestFulfillment = 3`  
 `LeadTaskDelegationStatus`: `PendingAdminApproval = 0`, `Approved = 1`, `Rejected = 2`, `Completed = 3`
 
 ### POST `/api/lead-task-delegation` — Role: Lead
@@ -265,7 +266,7 @@ Used when the assigned Lead is busy and wants a QC Transport user to perform mat
   "reason": "string (optional, max 500)"
 }
 ```
-`taskId` is `materialDeliveryId` when `type = 0`; `transferRequestId` when `type = 1`; `batchId` when `type = 2`.
+`taskId` is `materialDeliveryId` when `type = 0`; `transferRequestId` when `type = 1`; `batchId` when `type = 2`; `materialRequestId` when `type = 3`.
 
 **Response `data`:** `LeadTaskDelegationDto`
 
@@ -299,6 +300,10 @@ Approves the delegated transfer on behalf of the requesting Lead; destination wo
 
 ### PUT `/api/lead-task-delegation/{id}/approve-final-review` — Role: QCTransport
 Approves final batch review on behalf of the requesting Lead for a delegated `FinalReview`; the batch moves from `PendingLeadReview` to `PendingGateQC`.  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/material-request-delivered` — Role: QCTransport
+Marks the delegated supplemental material request delivery as completed; workshop QC still confirms received quantities through `/api/material-request/{id}/confirm`.  
 **Response `data`:** `LeadTaskDelegationDto`
 
 ---

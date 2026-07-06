@@ -38,6 +38,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
             LeadTaskDelegationType.MaterialDelivery => await CreateMaterialDeliveryDelegationAsync(dto, leadId),
             LeadTaskDelegationType.TransferApproval => await CreateTransferApprovalDelegationAsync(dto, leadId),
             LeadTaskDelegationType.FinalReview => await CreateFinalReviewDelegationAsync(dto, leadId),
+            LeadTaskDelegationType.MaterialRequestFulfillment => await CreateMaterialRequestFulfillmentDelegationAsync(dto, leadId),
             _ => throw new BusinessRuleException("Unsupported delegation type")
         };
 
@@ -55,6 +56,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
             result.RequestedByLeadName,
             result.AssignedTransportQcId,
             result.AssignedTransportQcName,
+            result.MaterialRequestId,
             result.Reason
         });
 
@@ -129,6 +131,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
             result.BatchId,
             result.BatchNumber,
             result.TypeName,
+            result.MaterialRequestId,
             result.MaterialDeliveryId,
             result.TransferRequestId,
             result.AdminNotes
@@ -152,6 +155,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
             result.BatchId,
             result.BatchNumber,
             result.TypeName,
+            result.MaterialRequestId,
             result.AdminNotes
         });
 
@@ -279,6 +283,35 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         return result;
     }
 
+    public async Task<LeadTaskDelegationDto> MarkMaterialRequestDeliveredAsync(int delegationId, int transportQcId)
+    {
+        var request = await GetExecutableRequestAsync(
+            delegationId,
+            transportQcId,
+            LeadTaskDelegationType.MaterialRequestFulfillment);
+
+        var materialRequest = await _unitOfWork.MaterialRequests.GetByIdAsync(request.MaterialRequestId!.Value)
+            ?? throw new NotFoundException("Material request not found");
+
+        if (materialRequest.Status != MaterialRequestStatus.Approved)
+            throw new BusinessRuleException("Material request is not approved for fulfillment");
+
+        CompleteRequest(request, transportQcId);
+        await _unitOfWork.SaveChangesAsync();
+
+        var result = await MapToDtoAsync(request.Id);
+        await _notifications.NotifyLeadTaskDelegationCompletedAsync(request.RequestedByLeadId, new
+        {
+            DelegationId = result.Id,
+            result.BatchId,
+            result.BatchNumber,
+            result.TypeName,
+            result.MaterialRequestId
+        });
+
+        return result;
+    }
+
     private async Task<LeadTaskDelegationRequest> CreateMaterialDeliveryDelegationAsync(
         CreateLeadTaskDelegationDto dto,
         int leadId)
@@ -306,6 +339,37 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
             BatchId = delivery.BatchId,
             MaterialDeliveryId = delivery.Id,
             Type = LeadTaskDelegationType.MaterialDelivery,
+            RequestedByLeadId = leadId,
+            AssignedTransportQcId = dto.AssignedTransportQcId,
+            Reason = dto.Reason
+        };
+    }
+
+    private async Task<LeadTaskDelegationRequest> CreateMaterialRequestFulfillmentDelegationAsync(
+        CreateLeadTaskDelegationDto dto,
+        int leadId)
+    {
+        var materialRequest = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
+            x => x.Id == dto.TaskId,
+            new[] { "Batch", "Workshop" })
+            ?? throw new NotFoundException("Material request not found");
+
+        if (materialRequest.Batch?.AssignedToLeadId != leadId)
+            throw new ForbiddenException("Only the assigned lead can delegate this material request fulfillment");
+
+        if (materialRequest.Status != MaterialRequestStatus.Approved)
+            throw new BusinessRuleException("Material request must be approved before it can be delegated for delivery");
+
+        await EnsureNoActiveDelegationAsync(
+            LeadTaskDelegationType.MaterialRequestFulfillment,
+            materialRequest.Id,
+            "There is already an active delegation for this material request fulfillment");
+
+        return new LeadTaskDelegationRequest
+        {
+            BatchId = materialRequest.BatchId,
+            MaterialRequestId = materialRequest.Id,
+            Type = LeadTaskDelegationType.MaterialRequestFulfillment,
             RequestedByLeadId = leadId,
             AssignedTransportQcId = dto.AssignedTransportQcId,
             Reason = dto.Reason
@@ -388,6 +452,12 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
                 && x.TransferRequestId == taskId
                 && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
                     || x.Status == LeadTaskDelegationStatus.Approved)),
+            LeadTaskDelegationType.MaterialRequestFulfillment => await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+                x.Type == type
+                && x.MaterialRequestId == taskId
+                && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
+                    || x.Status == LeadTaskDelegationStatus.Approved
+                    || x.Status == LeadTaskDelegationStatus.Completed)),
             LeadTaskDelegationType.FinalReview => await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
                 x.Type == type
                 && x.BatchId == taskId
@@ -481,6 +551,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         r.Status.ToString(),
         r.MaterialDeliveryId,
         r.TransferRequestId,
+        r.MaterialRequestId,
         r.RequestedByLeadId,
         r.RequestedByLead?.Name ?? "",
         r.AssignedTransportQcId,

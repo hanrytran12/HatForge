@@ -370,6 +370,51 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
+    public async Task ConfirmAsync_WhenTransportDelegationActive_WaitsForTransportDelivery()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcTransport(QcTransportId));
+        await ctx.SaveChangesAsync();
+        var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
+        await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 400, item2, 100), QcId);
+
+        var mrService = CreateService(ctx);
+        var pending = (await mrService.GetByBatchAsync(batchId)).Single();
+        var approved = await mrService.ApproveAsync(pending.Id, LeadId);
+        var delegationService = CreateDelegationService(ctx);
+        var delegation = await delegationService.CreateAsync(
+            new CreateLeadTaskDelegationDto(
+                LeadTaskDelegationType.MaterialRequestFulfillment,
+                approved.Id,
+                QcTransportId,
+                null),
+            LeadId);
+
+        var confirmDto = new ConfirmMaterialRequestDto(
+            approved.Id,
+            new List<ConfirmMaterialRequestItemDto>
+            {
+                new(approved.Items[0].Id, 100)
+            });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).ConfirmAsync(confirmDto, QcId));
+
+        await delegationService.ApproveAsync(delegation.Id, AdminId, new ReviewLeadTaskDelegationDto(null));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).ConfirmAsync(confirmDto, QcId));
+
+        await delegationService.MarkMaterialRequestDeliveredAsync(delegation.Id, QcTransportId);
+
+        var result = await CreateService(ctx).ConfirmAsync(confirmDto, QcId);
+
+        Assert.Equal(nameof(MaterialRequestStatus.Fulfilled), result.Status);
+    }
+
+    [Fact]
     public async Task ConfirmAsync_StillShort_CreatesNewRequest()
     {
         using var ctx = TestDataFactory.CreateContext();

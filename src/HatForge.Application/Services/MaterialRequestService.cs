@@ -306,6 +306,8 @@ public class MaterialRequestService : IMaterialRequestService
         if (qc.WorkshopId != targetWorkshopId)
             throw new ForbiddenException("You can only confirm material requests for your own workshop");
 
+        await EnsureTransportDelegationIsDeliveredAsync(request);
+
         var items = await _unitOfWork.MaterialRequestItems.FindAsync(
             x => x.MaterialRequestId == request.Id);
 
@@ -422,6 +424,18 @@ public class MaterialRequestService : IMaterialRequestService
         return nextRequest != null
             ? await MapToDtoAsync(nextRequest.Id)
             : await MapToDtoAsync(request.Id);
+    }
+
+    private async Task EnsureTransportDelegationIsDeliveredAsync(MaterialRequest request)
+    {
+        var activeDelegation = await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+            x.Type == LeadTaskDelegationType.MaterialRequestFulfillment
+            && x.MaterialRequestId == request.Id
+            && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
+                || x.Status == LeadTaskDelegationStatus.Approved));
+
+        if (activeDelegation != null)
+            throw new BusinessRuleException("Material request is waiting for QC Transport to mark it as delivered");
     }
 
     private async Task<MaterialRequestDto> MapToDtoAsync(int id)

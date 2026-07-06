@@ -65,4 +65,9 @@ public class LeadTaskDelegationController : BaseApiController
     [Authorize(Roles = nameof(UserRole.QCTransport))]
     public async Task<ActionResult<ApiResponse<LeadTaskDelegationDto>>> ApproveDelegatedFinalReview(int id)
         => Success(await _delegationService.ApproveDelegatedFinalReviewAsync(id, CurrentUserId));
+
+    [HttpPut("{id:int}/material-request-delivered")]
+    [Authorize(Roles = nameof(UserRole.QCTransport))]
+    public async Task<ActionResult<ApiResponse<LeadTaskDelegationDto>>> MarkMaterialRequestDelivered(int id)
+        => Success(await _delegationService.MarkMaterialRequestDeliveredAsync(id, CurrentUserId));
 }

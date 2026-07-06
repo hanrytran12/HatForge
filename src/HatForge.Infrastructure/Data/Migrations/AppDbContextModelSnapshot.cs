@@ -182,6 +182,9 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int?>("MaterialDeliveryId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("MaterialRequestId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -214,6 +217,8 @@ namespace HatForge.Infrastructure.Data.Migrations
 
                     b.HasIndex("MaterialDeliveryId");
 
+                    b.HasIndex("MaterialRequestId");
+
                     b.HasIndex("RequestedByLeadId");
 
                     b.HasIndex("ReviewedByAdminId");
@@ -222,13 +227,15 @@ namespace HatForge.Infrastructure.Data.Migrations
 
                     b.HasIndex("Type", "MaterialDeliveryId", "Status");
 
+                    b.HasIndex("Type", "MaterialRequestId", "Status");
+
                     b.HasIndex("Type", "BatchId", "Status");
 
                     b.HasIndex("Type", "TransferRequestId", "Status");
 
                     b.ToTable("LeadTaskDelegationRequests", t =>
                         {
-                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
+                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 3 AND \"MaterialRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
                         });
                 });
 
@@ -731,6 +738,11 @@ namespace HatForge.Infrastructure.Data.Migrations
                         .HasForeignKey("MaterialDeliveryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("HatForge.Domain.Entities.MaterialRequest", "MaterialRequest")
+                        .WithMany()
+                        .HasForeignKey("MaterialRequestId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("HatForge.Domain.Entities.User", "RequestedByLead")
                         .WithMany()
                         .HasForeignKey("RequestedByLeadId")
@@ -754,6 +766,8 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("CompletedByTransportQc");
 
                     b.Navigation("MaterialDelivery");
+
+                    b.Navigation("MaterialRequest");
 
                     b.Navigation("RequestedByLead");
 

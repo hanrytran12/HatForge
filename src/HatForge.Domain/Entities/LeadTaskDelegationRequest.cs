@@ -8,6 +8,7 @@ public class LeadTaskDelegationRequest
     public int BatchId { get; set; }
     public int? MaterialDeliveryId { get; set; }
     public int? TransferRequestId { get; set; }
+    public int? MaterialRequestId { get; set; }
     public LeadTaskDelegationType Type { get; set; }
     public LeadTaskDelegationStatus Status { get; set; } = LeadTaskDelegationStatus.PendingAdminApproval;
     public int RequestedByLeadId { get; set; }
@@ -23,6 +24,7 @@ public class LeadTaskDelegationRequest
     public Batch? Batch { get; set; }
     public MaterialDelivery? MaterialDelivery { get; set; }
     public TransferRequest? TransferRequest { get; set; }
+    public MaterialRequest? MaterialRequest { get; set; }
     public User? RequestedByLead { get; set; }
     public User? AssignedTransportQc { get; set; }
     public User? ReviewedByAdmin { get; set; }

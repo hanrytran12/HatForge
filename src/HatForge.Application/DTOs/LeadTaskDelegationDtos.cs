@@ -20,6 +20,7 @@ public record LeadTaskDelegationDto(
     string StatusName,
     int? MaterialDeliveryId,
     int? TransferRequestId,
+    int? MaterialRequestId,
     int RequestedByLeadId,
     string RequestedByLeadName,
     int AssignedTransportQcId,

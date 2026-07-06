@@ -63,6 +63,7 @@ public interface ILeadTaskDelegationService
     Task<LeadTaskDelegationDto> MarkMaterialDeliveredAsync(int delegationId, int transportQcId);
     Task<LeadTaskDelegationDto> ApproveDelegatedTransferAsync(int delegationId, int transportQcId);
     Task<LeadTaskDelegationDto> ApproveDelegatedFinalReviewAsync(int delegationId, int transportQcId);
+    Task<LeadTaskDelegationDto> MarkMaterialRequestDeliveredAsync(int delegationId, int transportQcId);
 }
 
 public interface IAuthService
