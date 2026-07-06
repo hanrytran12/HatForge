@@ -43,6 +43,7 @@ IUnitOfWork {
     IRepository<MaterialDeliveryItem> MaterialDeliveryItems;
     IRepository<MaterialRequest>     MaterialRequests;
     IRepository<MaterialRequestItem> MaterialRequestItems;
+    IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests;
     IRepository<BatchWorkshop>       BatchWorkshops;
     IRepository<Workshop>           Workshops;
     IRepository<HatModel>           HatModels;
@@ -102,7 +103,7 @@ The publisher owns both SignalR group fan-out and DB notification persistence (`
 Registered as `IHostedService`. On startup:
 1. Calls `ctx.Database.MigrateAsync()` (auto-applies pending EF migrations)
 2. If no users exist, seeds default users, workshops, and a hat model
-3. Seeds 9 default accounts (Admin, Lead, 3 Staff + 3 QCWorkshop, 1 QCGate) — see `DbSeeder.cs`
+3. Seeds 10 default accounts (Admin, Lead, 3 Staff, 3 QCWorkshop, 1 QCTransport, 1 QCGate) — see `DbSeeder.cs`
 
 Do not disable or remove this service.
 
@@ -116,7 +117,7 @@ Located in `HatForge.Infrastructure`. Exists solely for `dotnet ef` CLI tooling.
 
 All registrations happen in `Program.cs` / extension methods in the API project:
 - `AddScoped<IUnitOfWork, UnitOfWork>` (one per HTTP request)
-- `AddScoped<I*Service, *Service>` for all Application services (`BatchService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `AuthService`, `NotificationService`)
+- `AddScoped<I*Service, *Service>` for all Application services (`BatchService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `LeadTaskDelegationService`, `AuthService`, `NotificationService`)
 - `AddScoped<INotificationPublisher, SignalRNotificationPublisher>`
 - `AddScoped<IFileStorageService, CloudinaryFileStorageService>`
 - `AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>`

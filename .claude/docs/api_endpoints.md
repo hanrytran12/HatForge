@@ -203,6 +203,7 @@ Returns unconfirmed deliveries for the caller's workshop.
 **Response `data`:** `MaterialDeliveryDto`
 
 If the workshop is the first in the batch chain and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
+If the delivery has an active Lead task delegation for QCTransport, QCWorkshop can confirm receipt only after QCTransport marks the delivery as `Delivered`.
 
 ---
 
@@ -244,6 +245,67 @@ Allowed only for the first workshop in the chain whose `Workshop.RequiresMateria
 }
 ```
 **Response `data`:** `MaterialRequestDto`. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
+If the material request has an active QCTransport delegation, QCWorkshop can confirm receipt only after QCTransport marks the request as delivered.
+`MaterialRequestDto` includes `deliveredByTransportQcId`, `deliveredByTransportQcName`, and `deliveredAt` when supplemental material fulfillment was delivered through QCTransport delegation.
+
+---
+
+## Lead Task Delegation — `/api/lead-task-delegation`
+
+Used when the assigned Lead is busy and wants a QC Transport user to perform material delivery, supplemental material delivery, transfer approval, or final batch review. The request must be approved by Admin before QC Transport can execute it.
+
+`LeadTaskDelegationType`: `MaterialDelivery = 0`, `TransferApproval = 1`, `FinalReview = 2`, `MaterialRequestFulfillment = 3`  
+`LeadTaskDelegationStatus`: `PendingAdminApproval = 0`, `Approved = 1`, `Rejected = 2`, `Completed = 3`
+
+### POST `/api/lead-task-delegation` — Role: Lead
+**Request:**
+```json
+{
+  "type": 0,
+  "taskId": int,
+  "assignedTransportQcId": int,
+  "reason": "string (optional, max 500)"
+}
+```
+`taskId` is `materialDeliveryId` when `type = 0`; `transferRequestId` when `type = 1`; `batchId` when `type = 2`; `materialRequestId` when `type = 3`.
+
+**Response `data`:** `LeadTaskDelegationDto`
+
+### GET `/api/lead-task-delegation/pending-admin` — Role: Admin
+**Response `data`:** `LeadTaskDelegationDto[]`
+
+### GET `/api/lead-task-delegation/my-requests` — Role: Lead
+Returns all delegation requests created by the caller, including `PendingAdminApproval`, `Approved`, `Rejected`, and `Completed`.
+Rejected requests include `adminNotes` when Admin supplied a reason.
+**Response `data`:** `LeadTaskDelegationDto[]`
+
+### GET `/api/lead-task-delegation/my-assignments` — Role: QCTransport
+Returns approved/completed delegations assigned to the caller.  
+**Response `data`:** `LeadTaskDelegationDto[]`
+
+### PUT `/api/lead-task-delegation/{id}/approve` — Role: Admin
+**Request:** `{ "adminNotes": "string (optional, max 500)" }`  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/reject` — Role: Admin
+**Request:** `{ "adminNotes": "string (optional, max 500)" }`  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/material-delivered` — Role: QCTransport
+Marks the delegated `MaterialDelivery` as `Delivered` but not `Received`; workshop QC still confirms receipt through `/api/material/confirm`.  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/approve-transfer` — Role: QCTransport
+Approves the delegated transfer on behalf of the requesting Lead; destination workshop QC then continues through `/api/transfer/confirm-receipt`.  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/approve-final-review` — Role: QCTransport
+Approves final batch review on behalf of the requesting Lead for a delegated `FinalReview`; the batch moves from `PendingLeadReview` to `PendingGateQC`.  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/material-request-delivered` — Role: QCTransport
+Marks the delegated supplemental material request delivery as completed; workshop QC still confirms received quantities through `/api/material-request/{id}/confirm`.  
+**Response `data`:** `LeadTaskDelegationDto`
 
 ---
 

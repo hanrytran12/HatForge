@@ -22,6 +22,10 @@ public class NoOpNotificationPublisher : INotificationPublisher
     public Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
     public Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload) => Task.CompletedTask;
+    public Task NotifyLeadTaskDelegationRequestedAsync(object payload) => Task.CompletedTask;
+    public Task NotifyLeadTaskDelegationApprovedAsync(int transportQcId, object payload) => Task.CompletedTask;
+    public Task NotifyLeadTaskDelegationRejectedAsync(int leadId, object payload) => Task.CompletedTask;
+    public Task NotifyLeadTaskDelegationCompletedAsync(int leadId, object payload) => Task.CompletedTask;
     public Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, object payload)
     {
         LastMaterialLowAlertPayload = payload;

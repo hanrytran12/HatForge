@@ -306,6 +306,8 @@ public class MaterialRequestService : IMaterialRequestService
         if (qc.WorkshopId != targetWorkshopId)
             throw new ForbiddenException("You can only confirm material requests for your own workshop");
 
+        await EnsureTransportDelegationIsDeliveredAsync(request);
+
         var items = await _unitOfWork.MaterialRequestItems.FindAsync(
             x => x.MaterialRequestId == request.Id);
 
@@ -424,11 +426,23 @@ public class MaterialRequestService : IMaterialRequestService
             : await MapToDtoAsync(request.Id);
     }
 
+    private async Task EnsureTransportDelegationIsDeliveredAsync(MaterialRequest request)
+    {
+        var activeDelegation = await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+            x.Type == LeadTaskDelegationType.MaterialRequestFulfillment
+            && x.MaterialRequestId == request.Id
+            && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
+                || x.Status == LeadTaskDelegationStatus.Approved));
+
+        if (activeDelegation != null)
+            throw new BusinessRuleException("Material request is waiting for QC Transport to mark it as delivered");
+    }
+
     private async Task<MaterialRequestDto> MapToDtoAsync(int id)
     {
         var r = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
             x => x.Id == id,
-            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "FulfilledByQC" })
+            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "DeliveredByTransportQc", "FulfilledByQC" })
             ?? throw new NotFoundException("Material request not found");
         return MapToDtoValue(r);
     }
@@ -455,6 +469,9 @@ public class MaterialRequestService : IMaterialRequestService
         r.ApprovedByLeadId,
         r.ApprovedByLead?.Name,
         r.ApprovedAt,
+        r.DeliveredByTransportQcId,
+        r.DeliveredByTransportQc?.Name,
+        r.DeliveredAt,
         r.FulfilledByQCId,
         r.FulfilledByQC?.Name,
         r.FulfilledAt,

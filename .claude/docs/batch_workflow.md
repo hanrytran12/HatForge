@@ -59,6 +59,7 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 - Sets `MaterialDelivery.Status = Received`
 - Notification: Staff in workshop (`MaterialDeliveryConfirmed`)
 - If the workshop is **first in the chain** and any item was short, auto-creates a `MaterialRequest` (`Pending`, Round 1) for the lead and notifies them (`MaterialShortfall`). The batch flow is **not** blocked by a shortfall — the workshop is unblocked as soon as the original delivery is confirmed.
+- If this delivery has an active QCTransport delegation (`PendingAdminApproval` or `Approved`), QCWorkshop cannot confirm receipt until QCTransport marks it `Delivered`.
 
 **Constraint:** If `Workshop.RequiresMaterials = true`, Staff cannot submit work until `BatchWorkshop.MaterialsReceived = true`.
 
@@ -162,6 +163,38 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Constraint:** Transfer must be `Approved`. Caller must belong to the destination workshop.
 
 → **Repeat Steps 4–8 for each subsequent workshop in the chain.**
+
+---
+
+## Lead Task Delegation Flow
+
+When the assigned Lead is busy, they can delegate material delivery, supplemental material delivery, transfer approval, or final review to a QC Transport user. Delegation does not bypass Admin oversight.
+
+1. Lead creates a delegation request through `POST /api/lead-task-delegation`.
+   - `type = MaterialDelivery`: `taskId` is a `MaterialDelivery.Id`
+   - `type = TransferApproval`: `taskId` is a `TransferRequest.Id`
+   - `type = FinalReview`: `taskId` is a `Batch.Id` in `PendingLeadReview`
+   - `type = MaterialRequestFulfillment`: `taskId` is an approved `MaterialRequest.Id`
+2. Lead can track every request and its latest status through `GET /api/lead-task-delegation/my-requests`.
+3. Admin reviews the request through `PUT /api/lead-task-delegation/{id}/approve` or `/reject`.
+4. If rejected, the request becomes `Rejected`, the Lead receives `LeadTaskDelegationRejected`, and `adminNotes` is visible in `my-requests`. The original material delivery/transfer remains unchanged, so the Lead can handle it directly or create a new delegation.
+5. If approved, the assigned QC Transport user receives `LeadTaskDelegationApproved`.
+6. QC Transport executes the approved task:
+   - `PUT /api/lead-task-delegation/{id}/material-delivered` marks the delivery as `Delivered`; workshop QC still confirms receipt through `/api/material/confirm`.
+   - `PUT /api/lead-task-delegation/{id}/approve-transfer` approves the transfer on behalf of the requesting Lead; destination QC still confirms receipt through `/api/transfer/confirm-receipt`.
+   - `PUT /api/lead-task-delegation/{id}/approve-final-review` approves final review on behalf of the requesting Lead; the batch moves to `PendingGateQC`.
+   - `PUT /api/lead-task-delegation/{id}/material-request-delivered` marks supplemental material delivery done; workshop QC still confirms received quantities through `/api/material-request/{id}/confirm`.
+7. The delegation request becomes `Completed`, and Lead/Admin receive `LeadTaskDelegationCompleted`.
+
+Guards:
+- Only the assigned Lead for the batch can create the delegation.
+- Assigned user must have role `QCTransport`.
+- A target delivery/transfer cannot have another active (`PendingAdminApproval` or `Approved`) delegation; this is enforced by service checks and filtered unique indexes.
+- A supplemental material request cannot have another delivery delegation in `PendingAdminApproval`, `Approved`, or `Completed`.
+- A batch cannot have another active final review delegation; this is enforced by service checks and a filtered unique index.
+- QC Transport can execute only requests assigned to them and approved by Admin.
+- For material delivery delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked `Delivered`.
+- For supplemental material request delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked delivered; when marked delivered, `MaterialRequest.DeliveredByTransportQcId` and `DeliveredAt` are recorded.
 
 ---
 

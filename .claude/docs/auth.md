@@ -46,6 +46,7 @@ Services receive these values as method parameters — they do not access `IHttp
 | Staff | 2 | Submits work with photos. Must be assigned to a workshop. |
 | QCWorkshop | 3 | Reviews work, initiates transfers, confirms receipts, confirms materials, creates ad-hoc material requests. Must be assigned to a workshop. |
 | QCGate | 4 | Final gate quality confirmation. No workshop assignment. |
+| QCTransport | 5 | Performs Admin-approved Lead delegation tasks for material delivery and transfer approval. No workshop assignment. |
 
 ---
 
@@ -104,6 +105,20 @@ Services receive these values as method parameters — they do not access `IHttp
 | `POST /api/material-request/ad-hoc` | QCWorkshop |
 | `PUT /api/material-request/{id}/confirm` | QCWorkshop |
 
+### LeadTaskDelegationController
+| Action | Required Role |
+|---|---|
+| `POST /api/lead-task-delegation` | Lead |
+| `GET /api/lead-task-delegation/pending-admin` | Admin |
+| `GET /api/lead-task-delegation/my-requests` | Lead |
+| `GET /api/lead-task-delegation/my-assignments` | QCTransport |
+| `PUT /api/lead-task-delegation/{id}/approve` | Admin |
+| `PUT /api/lead-task-delegation/{id}/reject` | Admin |
+| `PUT /api/lead-task-delegation/{id}/material-delivered` | QCTransport |
+| `PUT /api/lead-task-delegation/{id}/approve-transfer` | QCTransport |
+| `PUT /api/lead-task-delegation/{id}/approve-final-review` | QCTransport |
+| `PUT /api/lead-task-delegation/{id}/material-request-delivered` | QCTransport |
+
 ### NotificationController
 All actions: any authenticated user (operates on caller's own notifications only).
 
@@ -135,6 +150,7 @@ Passwords are hashed with BCrypt (BCrypt.Net-Next). Plaintext is never stored or
 | qc1@hatforge.com | QCWorkshop | 1 (Cutting) | `Qc123!` |
 | qc2@hatforge.com | QCWorkshop | 2 (Sewing) | `Qc123!` |
 | qc3@hatforge.com | QCWorkshop | 3 (Finishing) | `Qc123!` |
+| transport@hatforge.com | QCTransport | — | `Transport123!` |
 | gate@hatforge.com | QCGate | — | `Gate123!` |
 
 Seeded workshops: `Cutting` (RequiresMaterials=true), `Sewing` (false), `Finishing` (false).

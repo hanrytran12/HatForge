@@ -16,6 +16,7 @@ public class UnitOfWork : IUnitOfWork
     private Repository<MaterialDeliveryItem>? _materialDeliveryItems;
     private Repository<MaterialRequest>? _materialRequests;
     private Repository<MaterialRequestItem>? _materialRequestItems;
+    private Repository<LeadTaskDelegationRequest>? _leadTaskDelegationRequests;
     private Repository<BatchWorkshop>? _batchWorkshops;
     private Repository<Workshop>? _workshops;
     private Repository<HatModel>? _hatModels;
@@ -32,6 +33,7 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<MaterialDeliveryItem> MaterialDeliveryItems => _materialDeliveryItems ??= new Repository<MaterialDeliveryItem>(_context);
     public IRepository<MaterialRequest> MaterialRequests => _materialRequests ??= new Repository<MaterialRequest>(_context);
     public IRepository<MaterialRequestItem> MaterialRequestItems => _materialRequestItems ??= new Repository<MaterialRequestItem>(_context);
+    public IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests => _leadTaskDelegationRequests ??= new Repository<LeadTaskDelegationRequest>(_context);
     public IRepository<BatchWorkshop> BatchWorkshops => _batchWorkshops ??= new Repository<BatchWorkshop>(_context);
     public IRepository<Workshop> Workshops => _workshops ??= new Repository<Workshop>(_context);
     public IRepository<HatModel> HatModels => _hatModels ??= new Repository<HatModel>(_context);

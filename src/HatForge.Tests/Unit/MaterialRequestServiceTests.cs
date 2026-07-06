@@ -16,6 +16,8 @@ public class MaterialRequestServiceTests
     private const int StaffId = 2;
     private const int QcId = 3;
     private const int QcIdWorkshop2 = 5;
+    private const int AdminId = 4;
+    private const int QcTransportId = 7;
     private const int Workshop1Id = 1;
     private const int Workshop2Id = 2;
     private const int Workshop3Id = 3;
@@ -26,6 +28,9 @@ public class MaterialRequestServiceTests
     };
 
     private static MaterialRequestService CreateService(AppDbContext ctx)
+        => new(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+    private static LeadTaskDelegationService CreateDelegationService(AppDbContext ctx)
         => new(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
 
     private static MaterialDeliveryService CreateDeliveryService(AppDbContext ctx)
@@ -242,6 +247,46 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
+    public async Task ConfirmDelivery_WhenTransportDelegationActive_WaitsForTransportDelivery()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcTransport(QcTransportId));
+        await ctx.SaveChangesAsync();
+        var (_, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx);
+
+        var delegationService = CreateDelegationService(ctx);
+        var created = await delegationService.CreateAsync(
+            new CreateLeadTaskDelegationDto(
+                LeadTaskDelegationType.MaterialDelivery,
+                deliveryId,
+                QcTransportId,
+                null),
+            LeadId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+                BuildConfirm(deliveryId, item1, 500, item2, 100),
+                QcId));
+
+        await delegationService.ApproveAsync(created.Id, AdminId, new ReviewLeadTaskDelegationDto(null));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+                BuildConfirm(deliveryId, item1, 500, item2, 100),
+                QcId));
+
+        await delegationService.MarkMaterialDeliveredAsync(created.Id, QcTransportId);
+
+        var result = await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 500, item2, 100),
+            QcId);
+
+        Assert.True(result.IsConfirmed);
+        Assert.Equal(nameof(MaterialDeliveryStatus.Received), result.Status);
+    }
+
+    [Fact]
     public async Task ApproveAsync_ByAssignedLead_TransitionsToApproved()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -320,6 +365,56 @@ public class MaterialRequestServiceTests
             {
                 new(approved.Items[0].Id, 100)
             }), QcId);
+
+        Assert.Equal(nameof(MaterialRequestStatus.Fulfilled), result.Status);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_WhenTransportDelegationActive_WaitsForTransportDelivery()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        ctx.Users.Add(TestDataFactory.QcTransport(QcTransportId));
+        await ctx.SaveChangesAsync();
+        var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
+        await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 400, item2, 100), QcId);
+
+        var mrService = CreateService(ctx);
+        var pending = (await mrService.GetByBatchAsync(batchId)).Single();
+        var approved = await mrService.ApproveAsync(pending.Id, LeadId);
+        var delegationService = CreateDelegationService(ctx);
+        var delegation = await delegationService.CreateAsync(
+            new CreateLeadTaskDelegationDto(
+                LeadTaskDelegationType.MaterialRequestFulfillment,
+                approved.Id,
+                QcTransportId,
+                null),
+            LeadId);
+
+        var confirmDto = new ConfirmMaterialRequestDto(
+            approved.Id,
+            new List<ConfirmMaterialRequestItemDto>
+            {
+                new(approved.Items[0].Id, 100)
+            });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).ConfirmAsync(confirmDto, QcId));
+
+        await delegationService.ApproveAsync(delegation.Id, AdminId, new ReviewLeadTaskDelegationDto(null));
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            CreateService(ctx).ConfirmAsync(confirmDto, QcId));
+
+        await delegationService.MarkMaterialRequestDeliveredAsync(delegation.Id, QcTransportId);
+
+        var delivered = (await CreateService(ctx).GetByBatchAsync(batchId)).Single(x => x.Id == approved.Id);
+        Assert.Equal(QcTransportId, delivered.DeliveredByTransportQcId);
+        Assert.Equal("QC Transport", delivered.DeliveredByTransportQcName);
+        Assert.NotNull(delivered.DeliveredAt);
+
+        var result = await CreateService(ctx).ConfirmAsync(confirmDto, QcId);
 
         Assert.Equal(nameof(MaterialRequestStatus.Fulfilled), result.Status);
     }

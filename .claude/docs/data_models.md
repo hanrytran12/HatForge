@@ -11,6 +11,7 @@ Batch (1) ──────────────────── (*) Work
 Batch (1) ──────────────────── (*) TransferRequest
 Batch (1) ──────────────────── (*) MaterialDelivery
 Batch (1) ──────────────────── (*) MaterialRequest
+Batch (1) ──────────────────── (*) LeadTaskDelegationRequest
 
 Workshop (1) ───────────────── (*) User
 Workshop (1) ───────────────── (*) BatchWorkshop
@@ -39,7 +40,17 @@ MaterialRequest (*) ── (1) Workshop
 MaterialRequest (*) ── (0..1) MaterialDelivery [OriginalDelivery]
 MaterialRequest (*) ── (1) User [CreatedByQC]
 MaterialRequest (*) ── (0..1) User [ApprovedByLead]
+MaterialRequest (*) ── (0..1) User [DeliveredByTransportQc]
 MaterialRequest (*) ── (0..1) User [FulfilledByQC]
+
+LeadTaskDelegationRequest (*) ── (1) Batch
+LeadTaskDelegationRequest (*) ── (0..1) MaterialDelivery
+LeadTaskDelegationRequest (*) ── (0..1) TransferRequest
+LeadTaskDelegationRequest (*) ── (0..1) MaterialRequest
+LeadTaskDelegationRequest (*) ── (1) User [RequestedByLead]
+LeadTaskDelegationRequest (*) ── (1) User [AssignedTransportQc]
+LeadTaskDelegationRequest (*) ── (0..1) User [ReviewedByAdmin]
+LeadTaskDelegationRequest (*) ── (0..1) User [CompletedByTransportQc]
 
 Notification (*) ── (1) User
 ```
@@ -99,7 +110,7 @@ Unique index: `(BatchId, WorkshopId)`
 | Name | string | Max 128 |
 | Email | string | Unique, max 256 |
 | PasswordHash | string | BCrypt |
-| Role | UserRole | Admin=0, Lead=1, Staff=2, QCWorkshop=3, QCGate=4 |
+| Role | UserRole | Admin=0, Lead=1, Staff=2, QCWorkshop=3, QCGate=4, QCTransport=5 |
 | WorkshopId | int? | Null for Admin, Lead, QCGate |
 | Workshop | Workshop? | Nav |
 
@@ -162,7 +173,7 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | BatchId | int | FK → Batch |
 | WorkshopId | int | FK → Workshop |
 | ScheduledDate | DateTime | |
-| DeliveredDate | DateTime? | Set on confirm |
+| DeliveredDate | DateTime? | Set when QCTransport marks delivered, or on workshop QC confirmation if not set earlier |
 | IsConfirmed | bool | |
 | ConfirmedByQCId | int? | FK → User |
 | ConfirmedAt | DateTime? | |
@@ -194,6 +205,8 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | CreatedAt | DateTime | |
 | ApprovedByLeadId | int? | FK → User (Lead) |
 | ApprovedAt | DateTime? | |
+| DeliveredByTransportQcId | int? | FK → User (QCTransport); set when an approved supplemental delivery delegation is marked delivered |
+| DeliveredAt | DateTime? | Transport delivery timestamp for delegated supplemental material fulfillment |
 | FulfilledByQCId | int? | FK → User (QC) |
 | FulfilledAt | DateTime? | |
 | OriginalDelivery | MaterialDelivery? | Nav |
@@ -214,6 +227,28 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | Unit | string | Max 32 |
 | ShortfallQuantity | int | What was still missing at the time the item was created |
 | ActualQuantity | int? | Filled when QC confirms receipt |
+
+### LeadTaskDelegationRequest
+| Property | Type | Notes |
+|---|---|---|
+| Id | int | PK |
+| BatchId | int | FK → Batch |
+| MaterialDeliveryId | int? | FK → MaterialDelivery; required when `Type = MaterialDelivery` |
+| TransferRequestId | int? | FK → TransferRequest; required when `Type = TransferApproval` |
+| MaterialRequestId | int? | FK → MaterialRequest; required when `Type = MaterialRequestFulfillment` |
+| Type | LeadTaskDelegationType | MaterialDelivery=0, TransferApproval=1, FinalReview=2, MaterialRequestFulfillment=3 |
+| Status | LeadTaskDelegationStatus | PendingAdminApproval=0, Approved=1, Rejected=2, Completed=3 |
+| RequestedByLeadId | int | FK → User (Lead who created the request) |
+| AssignedTransportQcId | int | FK → User (QCTransport assigned to execute) |
+| ReviewedByAdminId | int? | FK → User (Admin who approved/rejected) |
+| CompletedByTransportQcId | int? | FK → User (QCTransport who executed) |
+| Reason | string? | Max 500 |
+| AdminNotes | string? | Max 500 |
+| CreatedAt / ReviewedAt / CompletedAt | DateTime | Audit timestamps |
+
+Constraint: target shape must match type. `MaterialDeliveryId` is used only for material delivery delegations; `TransferRequestId` is used only for transfer approval delegations; `MaterialRequestId` is used only for supplemental material request fulfillment delegations; final review delegations target the `BatchId` directly and leave optional target IDs null.
+
+Uniqueness: filtered unique indexes prevent duplicate active delegations per target. `MaterialDelivery`, `TransferApproval`, and `FinalReview` are unique for `PendingAdminApproval`/`Approved`; `MaterialRequestFulfillment` is unique for `PendingAdminApproval`/`Approved`/`Completed` so the same supplemental request cannot be transported twice before workshop confirmation.
 
 ### HatModel
 | Property | Type | Notes |
@@ -275,7 +310,17 @@ Pending = 0, Approved = 1, Fulfilled = 2
 
 ### UserRole
 ```csharp
-Admin = 0, Lead = 1, Staff = 2, QCWorkshop = 3, QCGate = 4
+Admin = 0, Lead = 1, Staff = 2, QCWorkshop = 3, QCGate = 4, QCTransport = 5
+```
+
+### LeadTaskDelegationType
+```csharp
+MaterialDelivery = 0, TransferApproval = 1, FinalReview = 2, MaterialRequestFulfillment = 3
+```
+
+### LeadTaskDelegationStatus
+```csharp
+PendingAdminApproval = 0, Approved = 1, Rejected = 2, Completed = 3
 ```
 
 ### RejectionReasonType
@@ -299,6 +344,7 @@ Defined but not currently wired to the `Work` entity.
 | RejectionNotes | Max 500 chars |
 | MaterialName | Max 256 chars |
 | MaterialRequestItem.Unit | Max 32 chars |
+| LeadTaskDelegationRequest.Reason / AdminNotes | Max 500 chars |
 | Delete behavior | `Restrict` on Workshop/User FKs; `Cascade` on Batch child records; `SetNull` on optional reviewer/approver FKs |
 
 ---

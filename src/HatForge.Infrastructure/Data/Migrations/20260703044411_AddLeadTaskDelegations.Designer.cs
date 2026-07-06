@@ -3,6 +3,7 @@ using System;
 using HatForge.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace HatForge.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260703044411_AddLeadTaskDelegations")]
+    partial class AddLeadTaskDelegations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -182,9 +185,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int?>("MaterialDeliveryId")
                         .HasColumnType("integer");
 
-                    b.Property<int?>("MaterialRequestId")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Reason")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
@@ -211,43 +211,27 @@ namespace HatForge.Infrastructure.Data.Migrations
 
                     b.HasIndex("AssignedTransportQcId");
 
-                    b.HasIndex("BatchId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveFinalReview")
-                        .HasFilter("\"Type\" = 2 AND \"Status\" IN (0, 1)");
+                    b.HasIndex("BatchId");
 
                     b.HasIndex("CompletedByTransportQcId");
 
-                    b.HasIndex("MaterialDeliveryId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveMaterialDelivery")
-                        .HasFilter("\"Type\" = 0 AND \"Status\" IN (0, 1) AND \"MaterialDeliveryId\" IS NOT NULL");
-
-                    b.HasIndex("MaterialRequestId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveMaterialRequestFulfillment")
-                        .HasFilter("\"Type\" = 3 AND \"Status\" IN (0, 1, 3) AND \"MaterialRequestId\" IS NOT NULL");
+                    b.HasIndex("MaterialDeliveryId");
 
                     b.HasIndex("RequestedByLeadId");
 
                     b.HasIndex("ReviewedByAdminId");
 
-                    b.HasIndex("TransferRequestId")
-                        .IsUnique()
-                        .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveTransferApproval")
-                        .HasFilter("\"Type\" = 1 AND \"Status\" IN (0, 1) AND \"TransferRequestId\" IS NOT NULL");
-
-                    b.HasIndex("Type", "BatchId", "Status");
+                    b.HasIndex("TransferRequestId");
 
                     b.HasIndex("Type", "MaterialDeliveryId", "Status");
 
-                    b.HasIndex("Type", "MaterialRequestId", "Status");
+                    b.HasIndex("Type", "BatchId", "Status");
 
                     b.HasIndex("Type", "TransferRequestId", "Status");
 
                     b.ToTable("LeadTaskDelegationRequests", t =>
                         {
-                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL AND \"MaterialRequestId\" IS NULL)\n                      OR (\"Type\" = 3 AND \"MaterialRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
+                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
                         });
                 });
 
@@ -344,12 +328,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Property<int>("CreatedByQCId")
                         .HasColumnType("integer");
 
-                    b.Property<DateTime?>("DeliveredAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("DeliveredByTransportQcId")
-                        .HasColumnType("integer");
-
                     b.Property<DateTime?>("FulfilledAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -385,8 +363,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.HasIndex("BatchId");
 
                     b.HasIndex("CreatedByQCId");
-
-                    b.HasIndex("DeliveredByTransportQcId");
 
                     b.HasIndex("FulfilledByQCId");
 
@@ -758,11 +734,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                         .HasForeignKey("MaterialDeliveryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("HatForge.Domain.Entities.MaterialRequest", "MaterialRequest")
-                        .WithMany()
-                        .HasForeignKey("MaterialRequestId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("HatForge.Domain.Entities.User", "RequestedByLead")
                         .WithMany()
                         .HasForeignKey("RequestedByLeadId")
@@ -786,8 +757,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("CompletedByTransportQc");
 
                     b.Navigation("MaterialDelivery");
-
-                    b.Navigation("MaterialRequest");
 
                     b.Navigation("RequestedByLead");
 
@@ -845,11 +814,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("HatForge.Domain.Entities.User", "DeliveredByTransportQc")
-                        .WithMany()
-                        .HasForeignKey("DeliveredByTransportQcId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("HatForge.Domain.Entities.User", "FulfilledByQC")
                         .WithMany()
                         .HasForeignKey("FulfilledByQCId")
@@ -875,8 +839,6 @@ namespace HatForge.Infrastructure.Data.Migrations
                     b.Navigation("Batch");
 
                     b.Navigation("CreatedByQC");
-
-                    b.Navigation("DeliveredByTransportQc");
 
                     b.Navigation("FulfilledByQC");
 

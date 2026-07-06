@@ -53,6 +53,8 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         if (qc.WorkshopId != delivery.WorkshopId)
             throw new ForbiddenException("You can only confirm deliveries for your own workshop");
 
+        await EnsureTransportDelegationIsDeliveredAsync(delivery);
+
         if (dto.Items == null || dto.Items.Count == 0)
             throw new BusinessRuleException("At least one item must be confirmed");
 
@@ -81,7 +83,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         delivery.IsConfirmed = true;
         delivery.ConfirmedByQCId = qcId;
         delivery.ConfirmedAt = DateTime.UtcNow;
-        delivery.DeliveredDate = DateTime.UtcNow;
+        delivery.DeliveredDate ??= DateTime.UtcNow;
         delivery.Status = MaterialDeliveryStatus.Received;
         _unitOfWork.MaterialDeliveries.Update(delivery);
 
@@ -110,6 +112,21 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         await _materialRequestService.CreateRequestFromShortfallAsync(delivery.Id, qcId);
 
         return MapToDto(delivery);
+    }
+
+    private async Task EnsureTransportDelegationIsDeliveredAsync(Domain.Entities.MaterialDelivery delivery)
+    {
+        if (delivery.Status == MaterialDeliveryStatus.Delivered)
+            return;
+
+        var activeDelegation = await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+            x.Type == LeadTaskDelegationType.MaterialDelivery
+            && x.MaterialDeliveryId == delivery.Id
+            && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
+                || x.Status == LeadTaskDelegationStatus.Approved));
+
+        if (activeDelegation != null)
+            throw new BusinessRuleException("Material delivery is waiting for QC Transport to mark it as delivered");
     }
 
     private static MaterialDeliveryDto MapToDto(Domain.Entities.MaterialDelivery d) => new(

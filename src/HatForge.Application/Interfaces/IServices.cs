@@ -52,6 +52,20 @@ public interface IMaterialRequestService
     Task<MaterialRequestDto> ConfirmAsync(ConfirmMaterialRequestDto dto, int qcId);
 }
 
+public interface ILeadTaskDelegationService
+{
+    Task<LeadTaskDelegationDto> CreateAsync(CreateLeadTaskDelegationDto dto, int leadId);
+    Task<IReadOnlyList<LeadTaskDelegationDto>> GetRequestedByLeadAsync(int leadId);
+    Task<IReadOnlyList<LeadTaskDelegationDto>> GetPendingForAdminAsync(int adminId);
+    Task<IReadOnlyList<LeadTaskDelegationDto>> GetAssignedToTransportQcAsync(int transportQcId);
+    Task<LeadTaskDelegationDto> ApproveAsync(int delegationId, int adminId, ReviewLeadTaskDelegationDto dto);
+    Task<LeadTaskDelegationDto> RejectAsync(int delegationId, int adminId, ReviewLeadTaskDelegationDto dto);
+    Task<LeadTaskDelegationDto> MarkMaterialDeliveredAsync(int delegationId, int transportQcId);
+    Task<LeadTaskDelegationDto> ApproveDelegatedTransferAsync(int delegationId, int transportQcId);
+    Task<LeadTaskDelegationDto> ApproveDelegatedFinalReviewAsync(int delegationId, int transportQcId);
+    Task<LeadTaskDelegationDto> MarkMaterialRequestDeliveredAsync(int delegationId, int transportQcId);
+}
+
 public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginDto dto);

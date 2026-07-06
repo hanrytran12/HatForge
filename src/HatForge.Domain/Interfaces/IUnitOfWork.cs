@@ -12,6 +12,7 @@ public interface IUnitOfWork : IDisposable
     IRepository<MaterialDeliveryItem> MaterialDeliveryItems { get; }
     IRepository<MaterialRequest> MaterialRequests { get; }
     IRepository<MaterialRequestItem> MaterialRequestItems { get; }
+    IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests { get; }
     IRepository<BatchWorkshop> BatchWorkshops { get; }
     IRepository<Workshop> Workshops { get; }
     IRepository<HatModel> HatModels { get; }

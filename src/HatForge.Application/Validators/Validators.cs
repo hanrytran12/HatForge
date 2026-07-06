@@ -177,6 +177,25 @@ public class CreateAdHocMaterialRequestValidator : AbstractValidator<CreateAdHoc
     }
 }
 
+public class CreateLeadTaskDelegationValidator : AbstractValidator<CreateLeadTaskDelegationDto>
+{
+    public CreateLeadTaskDelegationValidator()
+    {
+        RuleFor(x => x.Type).IsInEnum();
+        RuleFor(x => x.TaskId).GreaterThan(0);
+        RuleFor(x => x.AssignedTransportQcId).GreaterThan(0);
+        RuleFor(x => x.Reason).MaximumLength(500);
+    }
+}
+
+public class ReviewLeadTaskDelegationValidator : AbstractValidator<ReviewLeadTaskDelegationDto>
+{
+    public ReviewLeadTaskDelegationValidator()
+    {
+        RuleFor(x => x.AdminNotes).MaximumLength(500);
+    }
+}
+
 public class LoginValidator : AbstractValidator<LoginDto>
 {
     public LoginValidator()
