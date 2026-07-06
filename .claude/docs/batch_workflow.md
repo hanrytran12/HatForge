@@ -173,6 +173,7 @@ When the assigned Lead is busy, they can delegate either a material delivery tri
 1. Lead creates a delegation request through `POST /api/lead-task-delegation`.
    - `type = MaterialDelivery`: `taskId` is a `MaterialDelivery.Id`
    - `type = TransferApproval`: `taskId` is a `TransferRequest.Id`
+   - `type = FinalReview`: `taskId` is a `Batch.Id` in `PendingLeadReview`
 2. Lead can track every request and its latest status through `GET /api/lead-task-delegation/my-requests`.
 3. Admin reviews the request through `PUT /api/lead-task-delegation/{id}/approve` or `/reject`.
 4. If rejected, the request becomes `Rejected`, the Lead receives `LeadTaskDelegationRejected`, and `adminNotes` is visible in `my-requests`. The original material delivery/transfer remains unchanged, so the Lead can handle it directly or create a new delegation.
@@ -180,12 +181,14 @@ When the assigned Lead is busy, they can delegate either a material delivery tri
 6. QC Transport executes the approved task:
    - `PUT /api/lead-task-delegation/{id}/material-delivered` marks the delivery as `Delivered`; workshop QC still confirms receipt through `/api/material/confirm`.
    - `PUT /api/lead-task-delegation/{id}/approve-transfer` approves the transfer on behalf of the requesting Lead; destination QC still confirms receipt through `/api/transfer/confirm-receipt`.
+   - `PUT /api/lead-task-delegation/{id}/approve-final-review` approves final review on behalf of the requesting Lead; the batch moves to `PendingGateQC`.
 7. The delegation request becomes `Completed`, and Lead/Admin receive `LeadTaskDelegationCompleted`.
 
 Guards:
 - Only the assigned Lead for the batch can create the delegation.
 - Assigned user must have role `QCTransport`.
 - A target delivery/transfer cannot have another active (`PendingAdminApproval` or `Approved`) delegation.
+- A batch cannot have another active final review delegation.
 - QC Transport can execute only requests assigned to them and approved by Admin.
 - For material delivery delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked `Delivered`.
 

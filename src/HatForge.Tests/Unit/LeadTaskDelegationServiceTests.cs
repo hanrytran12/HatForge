@@ -83,6 +83,39 @@ public class LeadTaskDelegationServiceTests
         return transfer.Id;
     }
 
+    private static async Task<int> SeedFinalReviewBatchAsync(
+        HatForge.Infrastructure.Data.AppDbContext ctx,
+        BatchStatus status = BatchStatus.PendingLeadReview)
+    {
+        var batch = new Batch
+        {
+            BatchNumber = $"B-FINAL-{Guid.NewGuid():N}".Substring(0, 14),
+            HatModelId = 1,
+            TargetQuantity = 100,
+            Status = status,
+            AssignedToLeadId = LeadId,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(30)
+        };
+        ctx.Batches.Add(batch);
+        await ctx.SaveChangesAsync();
+
+        ctx.BatchWorkshops.Add(new BatchWorkshop
+        {
+            BatchId = batch.Id,
+            WorkshopId = 1,
+            OrderIndex = 0,
+            RequiresMaterials = false,
+            MaterialsReceived = true,
+            IsCompleted = true,
+            StartDate = DateTime.UtcNow,
+            EndDate = DateTime.UtcNow.AddDays(10)
+        });
+        await ctx.SaveChangesAsync();
+
+        return batch.Id;
+    }
+
     private static async Task SeedTransportUsersAsync(HatForge.Infrastructure.Data.AppDbContext ctx)
     {
         ctx.Users.Add(TestDataFactory.QcTransport(QcTransportId));
@@ -227,6 +260,73 @@ public class LeadTaskDelegationServiceTests
         Assert.Equal(TransferStatus.Approved, transfer!.Status);
         Assert.Equal(LeadId, transfer.ApprovedByLeadId);
         Assert.NotNull(transfer.ApprovedAt);
+    }
+
+    [Fact]
+    public async Task FinalReviewDelegation_ApprovedByAdmin_AllowsTransportQcToApproveFinalReview()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var batchId = await SeedFinalReviewBatchAsync(ctx);
+        var service = CreateService(ctx);
+
+        var created = await service.CreateAsync(
+            new CreateLeadTaskDelegationDto(
+                LeadTaskDelegationType.FinalReview,
+                batchId,
+                QcTransportId,
+                "Lead cannot attend final review"),
+            LeadId);
+        await service.ApproveAsync(created.Id, AdminId, new ReviewLeadTaskDelegationDto("ok"));
+
+        var completed = await service.ApproveDelegatedFinalReviewAsync(created.Id, QcTransportId);
+
+        Assert.Equal(LeadTaskDelegationType.FinalReview, completed.Type);
+        Assert.Equal(LeadTaskDelegationStatus.Completed, completed.Status);
+        Assert.Null(completed.MaterialDeliveryId);
+        Assert.Null(completed.TransferRequestId);
+        var batch = await TestDataFactory.CreateUnitOfWork(ctx).Batches.GetByIdAsync(batchId);
+        Assert.Equal(BatchStatus.PendingGateQC, batch!.Status);
+    }
+
+    [Fact]
+    public async Task CreateFinalReviewDelegation_WhenBatchNotPendingLeadReview_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var batchId = await SeedFinalReviewBatchAsync(ctx, BatchStatus.InProduction);
+        var service = CreateService(ctx);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(
+                new CreateLeadTaskDelegationDto(
+                    LeadTaskDelegationType.FinalReview,
+                    batchId,
+                    QcTransportId,
+                    null),
+                LeadId));
+    }
+
+    [Fact]
+    public async Task CreateFinalReviewDelegation_WhenActiveDelegationExists_ThrowsBusinessRule()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        await SeedTransportUsersAsync(ctx);
+        var batchId = await SeedFinalReviewBatchAsync(ctx);
+        var service = CreateService(ctx);
+        var dto = new CreateLeadTaskDelegationDto(
+            LeadTaskDelegationType.FinalReview,
+            batchId,
+            QcTransportId,
+            null);
+
+        await service.CreateAsync(dto, LeadId);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.CreateAsync(dto, LeadId));
     }
 
     [Fact]

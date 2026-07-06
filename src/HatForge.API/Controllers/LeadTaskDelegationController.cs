@@ -60,4 +60,9 @@ public class LeadTaskDelegationController : BaseApiController
     [Authorize(Roles = nameof(UserRole.QCTransport))]
     public async Task<ActionResult<ApiResponse<LeadTaskDelegationDto>>> ApproveDelegatedTransfer(int id)
         => Success(await _delegationService.ApproveDelegatedTransferAsync(id, CurrentUserId));
+
+    [HttpPut("{id:int}/approve-final-review")]
+    [Authorize(Roles = nameof(UserRole.QCTransport))]
+    public async Task<ActionResult<ApiResponse<LeadTaskDelegationDto>>> ApproveDelegatedFinalReview(int id)
+        => Success(await _delegationService.ApproveDelegatedFinalReviewAsync(id, CurrentUserId));
 }

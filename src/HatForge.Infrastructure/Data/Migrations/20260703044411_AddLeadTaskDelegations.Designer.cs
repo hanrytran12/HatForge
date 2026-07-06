@@ -225,11 +225,13 @@ namespace HatForge.Infrastructure.Data.Migrations
 
                     b.HasIndex("Type", "MaterialDeliveryId", "Status");
 
+                    b.HasIndex("Type", "BatchId", "Status");
+
                     b.HasIndex("Type", "TransferRequestId", "Status");
 
                     b.ToTable("LeadTaskDelegationRequests", t =>
                         {
-                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)");
+                            t.HasCheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
                         });
                 });
 

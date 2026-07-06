@@ -204,10 +204,12 @@ public class AppDbContext : DbContext
             e.Property(x => x.AdminNotes).HasMaxLength(500);
             e.HasIndex(x => new { x.Type, x.MaterialDeliveryId, x.Status });
             e.HasIndex(x => new { x.Type, x.TransferRequestId, x.Status });
+            e.HasIndex(x => new { x.Type, x.BatchId, x.Status });
             e.ToTable(t => t.HasCheckConstraint(
                     "CK_LeadTaskDelegationRequests_ExactlyOneTask",
                     @"(""Type"" = 0 AND ""MaterialDeliveryId"" IS NOT NULL AND ""TransferRequestId"" IS NULL)
-                      OR (""Type"" = 1 AND ""TransferRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL)"));
+                      OR (""Type"" = 1 AND ""TransferRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL)
+                      OR (""Type"" = 2 AND ""MaterialDeliveryId"" IS NULL AND ""TransferRequestId"" IS NULL)"));
             e.HasOne(x => x.Batch)
                 .WithMany()
                 .HasForeignKey(x => x.BatchId)

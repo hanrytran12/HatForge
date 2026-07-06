@@ -250,9 +250,9 @@ Allowed only for the first workshop in the chain whose `Workshop.RequiresMateria
 
 ## Lead Task Delegation — `/api/lead-task-delegation`
 
-Used when the assigned Lead is busy and wants a QC Transport user to perform either material delivery or transfer approval. The request must be approved by Admin before QC Transport can execute it.
+Used when the assigned Lead is busy and wants a QC Transport user to perform material delivery, transfer approval, or final batch review. The request must be approved by Admin before QC Transport can execute it.
 
-`LeadTaskDelegationType`: `MaterialDelivery = 0`, `TransferApproval = 1`  
+`LeadTaskDelegationType`: `MaterialDelivery = 0`, `TransferApproval = 1`, `FinalReview = 2`  
 `LeadTaskDelegationStatus`: `PendingAdminApproval = 0`, `Approved = 1`, `Rejected = 2`, `Completed = 3`
 
 ### POST `/api/lead-task-delegation` — Role: Lead
@@ -265,7 +265,7 @@ Used when the assigned Lead is busy and wants a QC Transport user to perform eit
   "reason": "string (optional, max 500)"
 }
 ```
-`taskId` is `materialDeliveryId` when `type = 0`; `transferRequestId` when `type = 1`.
+`taskId` is `materialDeliveryId` when `type = 0`; `transferRequestId` when `type = 1`; `batchId` when `type = 2`.
 
 **Response `data`:** `LeadTaskDelegationDto`
 
@@ -295,6 +295,10 @@ Marks the delegated `MaterialDelivery` as `Delivered` but not `Received`; worksh
 
 ### PUT `/api/lead-task-delegation/{id}/approve-transfer` — Role: QCTransport
 Approves the delegated transfer on behalf of the requesting Lead; destination workshop QC then continues through `/api/transfer/confirm-receipt`.  
+**Response `data`:** `LeadTaskDelegationDto`
+
+### PUT `/api/lead-task-delegation/{id}/approve-final-review` — Role: QCTransport
+Approves final batch review on behalf of the requesting Lead for a delegated `FinalReview`; the batch moves from `PendingLeadReview` to `PendingGateQC`.  
 **Response `data`:** `LeadTaskDelegationDto`
 
 ---

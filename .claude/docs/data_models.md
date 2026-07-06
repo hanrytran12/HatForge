@@ -231,7 +231,7 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | BatchId | int | FK → Batch |
 | MaterialDeliveryId | int? | FK → MaterialDelivery; required when `Type = MaterialDelivery` |
 | TransferRequestId | int? | FK → TransferRequest; required when `Type = TransferApproval` |
-| Type | LeadTaskDelegationType | MaterialDelivery=0, TransferApproval=1 |
+| Type | LeadTaskDelegationType | MaterialDelivery=0, TransferApproval=1, FinalReview=2 |
 | Status | LeadTaskDelegationStatus | PendingAdminApproval=0, Approved=1, Rejected=2, Completed=3 |
 | RequestedByLeadId | int | FK → User (Lead who created the request) |
 | AssignedTransportQcId | int | FK → User (QCTransport assigned to execute) |
@@ -241,7 +241,7 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | AdminNotes | string? | Max 500 |
 | CreatedAt / ReviewedAt / CompletedAt | DateTime | Audit timestamps |
 
-Constraint: exactly one target is set. `MaterialDeliveryId` is used only for material delivery delegations; `TransferRequestId` is used only for transfer approval delegations.
+Constraint: target shape must match type. `MaterialDeliveryId` is used only for material delivery delegations; `TransferRequestId` is used only for transfer approval delegations; final review delegations target the `BatchId` directly and leave both optional target IDs null.
 
 ### HatModel
 | Property | Type | Notes |
@@ -308,7 +308,7 @@ Admin = 0, Lead = 1, Staff = 2, QCWorkshop = 3, QCGate = 4, QCTransport = 5
 
 ### LeadTaskDelegationType
 ```csharp
-MaterialDelivery = 0, TransferApproval = 1
+MaterialDelivery = 0, TransferApproval = 1, FinalReview = 2
 ```
 
 ### LeadTaskDelegationStatus

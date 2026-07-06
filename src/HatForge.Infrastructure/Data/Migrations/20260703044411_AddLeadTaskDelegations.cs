@@ -36,7 +36,7 @@ namespace HatForge.Infrastructure.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_LeadTaskDelegationRequests", x => x.Id);
-                    table.CheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)");
+                    table.CheckConstraint("CK_LeadTaskDelegationRequests_ExactlyOneTask", "(\"Type\" = 0 AND \"MaterialDeliveryId\" IS NOT NULL AND \"TransferRequestId\" IS NULL)\n                      OR (\"Type\" = 1 AND \"TransferRequestId\" IS NOT NULL AND \"MaterialDeliveryId\" IS NULL)\n                      OR (\"Type\" = 2 AND \"MaterialDeliveryId\" IS NULL AND \"TransferRequestId\" IS NULL)");
                     table.ForeignKey(
                         name: "FK_LeadTaskDelegationRequests_Batches_BatchId",
                         column: x => x.BatchId,
@@ -120,6 +120,11 @@ namespace HatForge.Infrastructure.Data.Migrations
                 name: "IX_LeadTaskDelegationRequests_Type_MaterialDeliveryId_Status",
                 table: "LeadTaskDelegationRequests",
                 columns: new[] { "Type", "MaterialDeliveryId", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_LeadTaskDelegationRequests_Type_BatchId_Status",
+                table: "LeadTaskDelegationRequests",
+                columns: new[] { "Type", "BatchId", "Status" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_LeadTaskDelegationRequests_Type_TransferRequestId_Status",

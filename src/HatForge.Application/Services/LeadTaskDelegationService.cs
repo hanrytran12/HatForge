@@ -37,6 +37,7 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         {
             LeadTaskDelegationType.MaterialDelivery => await CreateMaterialDeliveryDelegationAsync(dto, leadId),
             LeadTaskDelegationType.TransferApproval => await CreateTransferApprovalDelegationAsync(dto, leadId),
+            LeadTaskDelegationType.FinalReview => await CreateFinalReviewDelegationAsync(dto, leadId),
             _ => throw new BusinessRuleException("Unsupported delegation type")
         };
 
@@ -236,6 +237,48 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         return result;
     }
 
+    public async Task<LeadTaskDelegationDto> ApproveDelegatedFinalReviewAsync(int delegationId, int transportQcId)
+    {
+        var request = await GetExecutableRequestAsync(
+            delegationId,
+            transportQcId,
+            LeadTaskDelegationType.FinalReview);
+
+        var batch = await _unitOfWork.Batches.GetByIdAsync(request.BatchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.AssignedToLeadId != request.RequestedByLeadId)
+            throw new BusinessRuleException("Delegation no longer matches the assigned lead for this batch");
+        if (batch.Status != BatchStatus.PendingLeadReview)
+            throw new BusinessRuleException("Batch is not pending lead review");
+
+        batch.Status = BatchStatus.PendingGateQC;
+        _unitOfWork.Batches.Update(batch);
+
+        CompleteRequest(request, transportQcId);
+        await _unitOfWork.SaveChangesAsync();
+
+        await _notifications.NotifyGateQCReviewRequestedAsync(new
+        {
+            BatchId = batch.Id,
+            batch.BatchNumber,
+            DelegationId = request.Id,
+            ApprovedByTransportQcId = transportQcId,
+            Message = "QC Transport has approved final review on behalf of Lead. Please perform final quality check."
+        });
+
+        var result = await MapToDtoAsync(request.Id);
+        await _notifications.NotifyLeadTaskDelegationCompletedAsync(request.RequestedByLeadId, new
+        {
+            DelegationId = result.Id,
+            result.BatchId,
+            result.BatchNumber,
+            result.TypeName
+        });
+
+        return result;
+    }
+
     private async Task<LeadTaskDelegationRequest> CreateMaterialDeliveryDelegationAsync(
         CreateLeadTaskDelegationDto dto,
         int leadId)
@@ -300,22 +343,58 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         };
     }
 
+    private async Task<LeadTaskDelegationRequest> CreateFinalReviewDelegationAsync(
+        CreateLeadTaskDelegationDto dto,
+        int leadId)
+    {
+        var batch = await _unitOfWork.Batches.GetByIdAsync(dto.TaskId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.AssignedToLeadId != leadId)
+            throw new ForbiddenException("Only the assigned lead can delegate this final review");
+
+        if (batch.Status != BatchStatus.PendingLeadReview)
+            throw new BusinessRuleException("Batch is not pending lead review");
+
+        await EnsureNoActiveDelegationAsync(
+            LeadTaskDelegationType.FinalReview,
+            batch.Id,
+            "There is already an active final review delegation for this batch");
+
+        return new LeadTaskDelegationRequest
+        {
+            BatchId = batch.Id,
+            Type = LeadTaskDelegationType.FinalReview,
+            RequestedByLeadId = leadId,
+            AssignedTransportQcId = dto.AssignedTransportQcId,
+            Reason = dto.Reason
+        };
+    }
+
     private async Task EnsureNoActiveDelegationAsync(
         LeadTaskDelegationType type,
         int taskId,
         string message)
     {
-        var existing = type == LeadTaskDelegationType.MaterialDelivery
-            ? await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+        var existing = type switch
+        {
+            LeadTaskDelegationType.MaterialDelivery => await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
                 x.Type == type
                 && x.MaterialDeliveryId == taskId
                 && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
-                    || x.Status == LeadTaskDelegationStatus.Approved))
-            : await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+                    || x.Status == LeadTaskDelegationStatus.Approved)),
+            LeadTaskDelegationType.TransferApproval => await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
                 x.Type == type
                 && x.TransferRequestId == taskId
                 && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
-                    || x.Status == LeadTaskDelegationStatus.Approved));
+                    || x.Status == LeadTaskDelegationStatus.Approved)),
+            LeadTaskDelegationType.FinalReview => await _unitOfWork.LeadTaskDelegationRequests.FirstOrDefaultAsync(x =>
+                x.Type == type
+                && x.BatchId == taskId
+                && (x.Status == LeadTaskDelegationStatus.PendingAdminApproval
+                    || x.Status == LeadTaskDelegationStatus.Approved)),
+            _ => throw new BusinessRuleException("Unsupported delegation type")
+        };
 
         if (existing != null)
             throw new BusinessRuleException(message);
