@@ -331,6 +331,8 @@ public class LeadTaskDelegationServiceTests
         Assert.Null(completed.TransferRequestId);
         var materialRequest = await TestDataFactory.CreateUnitOfWork(ctx).MaterialRequests.GetByIdAsync(materialRequestId);
         Assert.Equal(MaterialRequestStatus.Approved, materialRequest!.Status);
+        Assert.Equal(QcTransportId, materialRequest.DeliveredByTransportQcId);
+        Assert.NotNull(materialRequest.DeliveredAt);
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
             service.CreateAsync(

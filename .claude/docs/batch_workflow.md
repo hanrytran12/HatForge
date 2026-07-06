@@ -189,12 +189,12 @@ When the assigned Lead is busy, they can delegate material delivery, supplementa
 Guards:
 - Only the assigned Lead for the batch can create the delegation.
 - Assigned user must have role `QCTransport`.
-- A target delivery/transfer cannot have another active (`PendingAdminApproval` or `Approved`) delegation.
-- A supplemental material request cannot have another active delivery delegation.
-- A batch cannot have another active final review delegation.
+- A target delivery/transfer cannot have another active (`PendingAdminApproval` or `Approved`) delegation; this is enforced by service checks and filtered unique indexes.
+- A supplemental material request cannot have another delivery delegation in `PendingAdminApproval`, `Approved`, or `Completed`.
+- A batch cannot have another active final review delegation; this is enforced by service checks and a filtered unique index.
 - QC Transport can execute only requests assigned to them and approved by Admin.
 - For material delivery delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked `Delivered`.
-- For supplemental material request delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked delivered.
+- For supplemental material request delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked delivered; when marked delivered, `MaterialRequest.DeliveredByTransportQcId` and `DeliveredAt` are recorded.
 
 ---
 

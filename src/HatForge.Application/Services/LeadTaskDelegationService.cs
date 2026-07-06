@@ -296,6 +296,10 @@ public class LeadTaskDelegationService : ILeadTaskDelegationService
         if (materialRequest.Status != MaterialRequestStatus.Approved)
             throw new BusinessRuleException("Material request is not approved for fulfillment");
 
+        materialRequest.DeliveredByTransportQcId = transportQcId;
+        materialRequest.DeliveredAt = DateTime.UtcNow;
+        _unitOfWork.MaterialRequests.Update(materialRequest);
+
         CompleteRequest(request, transportQcId);
         await _unitOfWork.SaveChangesAsync();
 

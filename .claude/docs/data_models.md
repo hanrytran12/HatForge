@@ -40,6 +40,7 @@ MaterialRequest (*) ── (1) Workshop
 MaterialRequest (*) ── (0..1) MaterialDelivery [OriginalDelivery]
 MaterialRequest (*) ── (1) User [CreatedByQC]
 MaterialRequest (*) ── (0..1) User [ApprovedByLead]
+MaterialRequest (*) ── (0..1) User [DeliveredByTransportQc]
 MaterialRequest (*) ── (0..1) User [FulfilledByQC]
 
 LeadTaskDelegationRequest (*) ── (1) Batch
@@ -204,6 +205,8 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | CreatedAt | DateTime | |
 | ApprovedByLeadId | int? | FK → User (Lead) |
 | ApprovedAt | DateTime? | |
+| DeliveredByTransportQcId | int? | FK → User (QCTransport); set when an approved supplemental delivery delegation is marked delivered |
+| DeliveredAt | DateTime? | Transport delivery timestamp for delegated supplemental material fulfillment |
 | FulfilledByQCId | int? | FK → User (QC) |
 | FulfilledAt | DateTime? | |
 | OriginalDelivery | MaterialDelivery? | Nav |
@@ -244,6 +247,8 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | CreatedAt / ReviewedAt / CompletedAt | DateTime | Audit timestamps |
 
 Constraint: target shape must match type. `MaterialDeliveryId` is used only for material delivery delegations; `TransferRequestId` is used only for transfer approval delegations; `MaterialRequestId` is used only for supplemental material request fulfillment delegations; final review delegations target the `BatchId` directly and leave optional target IDs null.
+
+Uniqueness: filtered unique indexes prevent duplicate active delegations per target. `MaterialDelivery`, `TransferApproval`, and `FinalReview` are unique for `PendingAdminApproval`/`Approved`; `MaterialRequestFulfillment` is unique for `PendingAdminApproval`/`Approved`/`Completed` so the same supplemental request cannot be transported twice before workshop confirmation.
 
 ### HatModel
 | Property | Type | Notes |

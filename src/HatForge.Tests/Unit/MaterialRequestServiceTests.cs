@@ -409,6 +409,11 @@ public class MaterialRequestServiceTests
 
         await delegationService.MarkMaterialRequestDeliveredAsync(delegation.Id, QcTransportId);
 
+        var delivered = (await CreateService(ctx).GetByBatchAsync(batchId)).Single(x => x.Id == approved.Id);
+        Assert.Equal(QcTransportId, delivered.DeliveredByTransportQcId);
+        Assert.Equal("QC Transport", delivered.DeliveredByTransportQcName);
+        Assert.NotNull(delivered.DeliveredAt);
+
         var result = await CreateService(ctx).ConfirmAsync(confirmDto, QcId);
 
         Assert.Equal(nameof(MaterialRequestStatus.Fulfilled), result.Status);

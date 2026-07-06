@@ -442,7 +442,7 @@ public class MaterialRequestService : IMaterialRequestService
     {
         var r = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
             x => x.Id == id,
-            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "FulfilledByQC" })
+            new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "DeliveredByTransportQc", "FulfilledByQC" })
             ?? throw new NotFoundException("Material request not found");
         return MapToDtoValue(r);
     }
@@ -469,6 +469,9 @@ public class MaterialRequestService : IMaterialRequestService
         r.ApprovedByLeadId,
         r.ApprovedByLead?.Name,
         r.ApprovedAt,
+        r.DeliveredByTransportQcId,
+        r.DeliveredByTransportQc?.Name,
+        r.DeliveredAt,
         r.FulfilledByQCId,
         r.FulfilledByQC?.Name,
         r.FulfilledAt,

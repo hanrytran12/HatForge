@@ -182,6 +182,10 @@ public class AppDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(x => x.ApprovedByLeadId)
                 .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.DeliveredByTransportQc)
+                .WithMany()
+                .HasForeignKey(x => x.DeliveredByTransportQcId)
+                .OnDelete(DeleteBehavior.SetNull);
             e.HasOne(x => x.FulfilledByQC)
                 .WithMany()
                 .HasForeignKey(x => x.FulfilledByQCId)
@@ -206,6 +210,22 @@ public class AppDbContext : DbContext
             e.HasIndex(x => new { x.Type, x.TransferRequestId, x.Status });
             e.HasIndex(x => new { x.Type, x.MaterialRequestId, x.Status });
             e.HasIndex(x => new { x.Type, x.BatchId, x.Status });
+            e.HasIndex(x => x.MaterialDeliveryId)
+                .IsUnique()
+                .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveMaterialDelivery")
+                .HasFilter(@"""Type"" = 0 AND ""Status"" IN (0, 1) AND ""MaterialDeliveryId"" IS NOT NULL");
+            e.HasIndex(x => x.TransferRequestId)
+                .IsUnique()
+                .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveTransferApproval")
+                .HasFilter(@"""Type"" = 1 AND ""Status"" IN (0, 1) AND ""TransferRequestId"" IS NOT NULL");
+            e.HasIndex(x => x.BatchId)
+                .IsUnique()
+                .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveFinalReview")
+                .HasFilter(@"""Type"" = 2 AND ""Status"" IN (0, 1)");
+            e.HasIndex(x => x.MaterialRequestId)
+                .IsUnique()
+                .HasDatabaseName("UX_LeadTaskDelegationRequests_ActiveMaterialRequestFulfillment")
+                .HasFilter(@"""Type"" = 3 AND ""Status"" IN (0, 1, 3) AND ""MaterialRequestId"" IS NOT NULL");
             e.ToTable(t => t.HasCheckConstraint(
                     "CK_LeadTaskDelegationRequests_ExactlyOneTask",
                     @"(""Type"" = 0 AND ""MaterialDeliveryId"" IS NOT NULL AND ""TransferRequestId"" IS NULL AND ""MaterialRequestId"" IS NULL)

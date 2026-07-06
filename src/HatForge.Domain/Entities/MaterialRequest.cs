@@ -13,6 +13,8 @@ public class MaterialRequest
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public int? ApprovedByLeadId { get; set; }
     public DateTime? ApprovedAt { get; set; }
+    public int? DeliveredByTransportQcId { get; set; }
+    public DateTime? DeliveredAt { get; set; }
     public int? FulfilledByQCId { get; set; }
     public DateTime? FulfilledAt { get; set; }
     public int Round { get; set; } = 1;
@@ -24,6 +26,7 @@ public class MaterialRequest
     public Workshop Workshop { get; set; } = null!;
     public User CreatedByQC { get; set; } = null!;
     public User? ApprovedByLead { get; set; }
+    public User? DeliveredByTransportQc { get; set; }
     public User? FulfilledByQC { get; set; }
     public ICollection<MaterialRequestItem> Items { get; set; } = new List<MaterialRequestItem>();
 }

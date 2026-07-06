@@ -246,6 +246,7 @@ Allowed only for the first workshop in the chain whose `Workshop.RequiresMateria
 ```
 **Response `data`:** `MaterialRequestDto`. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
 If the material request has an active QCTransport delegation, QCWorkshop can confirm receipt only after QCTransport marks the request as delivered.
+`MaterialRequestDto` includes `deliveredByTransportQcId`, `deliveredByTransportQcName`, and `deliveredAt` when supplemental material fulfillment was delivered through QCTransport delegation.
 
 ---
 
