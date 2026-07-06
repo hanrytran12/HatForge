@@ -59,6 +59,7 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 - Sets `MaterialDelivery.Status = Received`
 - Notification: Staff in workshop (`MaterialDeliveryConfirmed`)
 - If the workshop is **first in the chain** and any item was short, auto-creates a `MaterialRequest` (`Pending`, Round 1) for the lead and notifies them (`MaterialShortfall`). The batch flow is **not** blocked by a shortfall — the workshop is unblocked as soon as the original delivery is confirmed.
+- If this delivery has an active QCTransport delegation (`PendingAdminApproval` or `Approved`), QCWorkshop cannot confirm receipt until QCTransport marks it `Delivered`.
 
 **Constraint:** If `Workshop.RequiresMaterials = true`, Staff cannot submit work until `BatchWorkshop.MaterialsReceived = true`.
 
@@ -186,6 +187,7 @@ Guards:
 - Assigned user must have role `QCTransport`.
 - A target delivery/transfer cannot have another active (`PendingAdminApproval` or `Approved`) delegation.
 - QC Transport can execute only requests assigned to them and approved by Admin.
+- For material delivery delegations, QCWorkshop receipt confirmation is blocked while the active delegation has not been marked `Delivered`.
 
 ---
 

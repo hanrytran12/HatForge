@@ -203,6 +203,7 @@ Returns unconfirmed deliveries for the caller's workshop.
 **Response `data`:** `MaterialDeliveryDto`
 
 If the workshop is the first in the batch chain and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
+If the delivery has an active Lead task delegation for QCTransport, QCWorkshop can confirm receipt only after QCTransport marks the delivery as `Delivered`.
 
 ---
 
