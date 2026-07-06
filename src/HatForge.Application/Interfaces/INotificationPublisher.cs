@@ -19,4 +19,8 @@ public interface INotificationPublisher
     Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload);
     Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload);
     Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, object payload);
+    Task NotifyLeadTaskDelegationRequestedAsync(object payload);
+    Task NotifyLeadTaskDelegationApprovedAsync(int transportQcId, object payload);
+    Task NotifyLeadTaskDelegationRejectedAsync(int leadId, object payload);
+    Task NotifyLeadTaskDelegationCompletedAsync(int leadId, object payload);
 }

@@ -81,7 +81,7 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         delivery.IsConfirmed = true;
         delivery.ConfirmedByQCId = qcId;
         delivery.ConfirmedAt = DateTime.UtcNow;
-        delivery.DeliveredDate = DateTime.UtcNow;
+        delivery.DeliveredDate ??= DateTime.UtcNow;
         delivery.Status = MaterialDeliveryStatus.Received;
         _unitOfWork.MaterialDeliveries.Update(delivery);
 

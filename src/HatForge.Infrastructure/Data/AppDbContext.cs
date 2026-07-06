@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<MaterialDeliveryItem> MaterialDeliveryItems => Set<MaterialDeliveryItem>();
     public DbSet<MaterialRequest> MaterialRequests => Set<MaterialRequest>();
     public DbSet<MaterialRequestItem> MaterialRequestItems => Set<MaterialRequestItem>();
+    public DbSet<LeadTaskDelegationRequest> LeadTaskDelegationRequests => Set<LeadTaskDelegationRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -195,6 +196,48 @@ public class AppDbContext : DbContext
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.MaterialRequestId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<LeadTaskDelegationRequest>(e =>
+        {
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.Property(x => x.AdminNotes).HasMaxLength(500);
+            e.HasIndex(x => new { x.Type, x.MaterialDeliveryId, x.Status });
+            e.HasIndex(x => new { x.Type, x.TransferRequestId, x.Status });
+            e.ToTable(t => t.HasCheckConstraint(
+                    "CK_LeadTaskDelegationRequests_ExactlyOneTask",
+                    @"(""Type"" = 0 AND ""MaterialDeliveryId"" IS NOT NULL AND ""TransferRequestId"" IS NULL)
+                      OR (""Type"" = 1 AND ""TransferRequestId"" IS NOT NULL AND ""MaterialDeliveryId"" IS NULL)"));
+            e.HasOne(x => x.Batch)
+                .WithMany()
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.MaterialDelivery)
+                .WithMany()
+                .HasForeignKey(x => x.MaterialDeliveryId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.TransferRequest)
+                .WithMany()
+                .HasForeignKey(x => x.TransferRequestId)
+                .IsRequired(false)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.RequestedByLead)
+                .WithMany()
+                .HasForeignKey(x => x.RequestedByLeadId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.AssignedTransportQc)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedTransportQcId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.ReviewedByAdmin)
+                .WithMany()
+                .HasForeignKey(x => x.ReviewedByAdminId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.CompletedByTransportQc)
+                .WithMany()
+                .HasForeignKey(x => x.CompletedByTransportQcId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<Notification>(e =>

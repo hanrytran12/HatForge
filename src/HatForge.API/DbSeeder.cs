@@ -42,6 +42,7 @@ public class DbSeederHostedService : IHostedService
             new User { Email = "qc1@hatforge.com", Name = "QC Workshop 1", Role = UserRole.QCWorkshop, WorkshopId = 1, PasswordHash = Pw("Qc123!") },
             new User { Email = "qc2@hatforge.com", Name = "QC Workshop 2", Role = UserRole.QCWorkshop, WorkshopId = 2, PasswordHash = Pw("Qc123!") },
             new User { Email = "qc3@hatforge.com", Name = "QC Workshop 3", Role = UserRole.QCWorkshop, WorkshopId = 3, PasswordHash = Pw("Qc123!") },
+            new User { Email = "transport@hatforge.com", Name = "QC Transport", Role = UserRole.QCTransport, PasswordHash = Pw("Transport123!") },
             new User { Email = "gate@hatforge.com", Name = "QC Gate", Role = UserRole.QCGate, PasswordHash = Pw("Gate123!") }
         );
         await ctx.SaveChangesAsync();

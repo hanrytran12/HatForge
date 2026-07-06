@@ -49,6 +49,10 @@ All events are pushed by `SignalRNotificationPublisher`. Some events also persis
 | `MaterialRequestApproved` | `workshop_{workshopId}`, `batch_{batchId}` | Yes (each QC in workshop) | Lead approves a material top-up request |
 | `MaterialRequestFulfilled` | `user_{leadId}`, `leads` | Yes (lead) | Workshop confirms receipt of top-up materials |
 | `AdHocMaterialRequest` | `user_{leadId}`, `leads` | Yes (lead) | QC creates an ad-hoc material request |
+| `LeadTaskDelegationRequested` | `admins` | Yes (each Admin) | Lead creates a QC Transport delegation request |
+| `LeadTaskDelegationApproved` | `user_{transportQcId}` | Yes (assigned QCTransport) | Admin approves a delegation request |
+| `LeadTaskDelegationRejected` | `user_{leadId}` | Yes (requesting Lead) | Admin rejects a delegation request |
+| `LeadTaskDelegationCompleted` | `user_{leadId}`, `admins` | Yes (lead + admins) | QCTransport completes an approved delegated task |
 
 ---
 
@@ -72,6 +76,10 @@ Task NotifyMaterialRequestApprovedAsync(int batchId, int workshopId, object payl
 Task NotifyMaterialRequestFulfilledAsync(int leadId, int batchId, int workshopId, object payload);
 Task NotifyAdHocMaterialRequestAsync(int leadId, int batchId, int workshopId, object payload);
 Task NotifyMaterialLowAlertAsync(int batchId, int workshopId, object payload);
+Task NotifyLeadTaskDelegationRequestedAsync(object payload);
+Task NotifyLeadTaskDelegationApprovedAsync(int transportQcId, object payload);
+Task NotifyLeadTaskDelegationRejectedAsync(int leadId, object payload);
+Task NotifyLeadTaskDelegationCompletedAsync(int leadId, object payload);
 ```
 
 Services depend on this interface. `SignalRNotificationPublisher` (API layer) implements it.

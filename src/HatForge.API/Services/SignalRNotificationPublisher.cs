@@ -272,6 +272,61 @@ public class SignalRNotificationPublisher : INotificationPublisher
         }
     }
 
+    public async Task NotifyLeadTaskDelegationRequestedAsync(object payload)
+    {
+        await _hub.Clients.Group("admins").SendAsync("LeadTaskDelegationRequested", payload);
+
+        var admins = await _unitOfWork.Users.FindAsync(x => x.Role == Domain.Enums.UserRole.Admin);
+        foreach (var admin in admins)
+        {
+            await SaveAsync(admin.Id, "LeadTaskDelegationRequested",
+                "Có đơn ủy quyền cần duyệt",
+                "Lead vừa tạo đơn ủy quyền cho QC vận chuyển. Vui lòng kiểm tra và duyệt.",
+                payload);
+        }
+    }
+
+    public async Task NotifyLeadTaskDelegationApprovedAsync(int transportQcId, object payload)
+    {
+        await _hub.Clients.Group($"user_{transportQcId}").SendAsync("LeadTaskDelegationApproved", payload);
+
+        await SaveAsync(transportQcId, "LeadTaskDelegationApproved",
+            "Bạn có việc vận chuyển mới",
+            "Admin đã duyệt đơn ủy quyền. Vui lòng đi thực hiện task được giao.",
+            payload);
+    }
+
+    public async Task NotifyLeadTaskDelegationRejectedAsync(int leadId, object payload)
+    {
+        await _hub.Clients.Group($"user_{leadId}").SendAsync("LeadTaskDelegationRejected", payload);
+
+        await SaveAsync(leadId, "LeadTaskDelegationRejected",
+            "Đơn ủy quyền bị từ chối",
+            "Admin đã từ chối đơn ủy quyền QC vận chuyển của bạn.",
+            payload);
+    }
+
+    public async Task NotifyLeadTaskDelegationCompletedAsync(int leadId, object payload)
+    {
+        await Task.WhenAll(
+            _hub.Clients.Group($"user_{leadId}").SendAsync("LeadTaskDelegationCompleted", payload),
+            _hub.Clients.Group("admins").SendAsync("LeadTaskDelegationCompleted", payload));
+
+        await SaveAsync(leadId, "LeadTaskDelegationCompleted",
+            "QC vận chuyển đã hoàn tất việc được giao",
+            "Một task ủy quyền của bạn đã được QC vận chuyển hoàn tất.",
+            payload);
+
+        var admins = await _unitOfWork.Users.FindAsync(x => x.Role == Domain.Enums.UserRole.Admin);
+        foreach (var admin in admins)
+        {
+            await SaveAsync(admin.Id, "LeadTaskDelegationCompleted",
+                "Task ủy quyền đã hoàn tất",
+                "QC vận chuyển đã hoàn tất một task được Admin duyệt.",
+                payload);
+        }
+    }
+
     private static bool IsOutOfMaterial(object payload)
     {
         return payload is MaterialLowAlertPayload alert && alert.MaterialRemaining <= 0;

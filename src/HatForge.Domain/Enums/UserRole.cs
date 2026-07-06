@@ -6,5 +6,6 @@ public enum UserRole
     Lead = 1,
     Staff = 2,
     QCWorkshop = 3,
-    QCGate = 4
+    QCGate = 4,
+    QCTransport = 5
 }

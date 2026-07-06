@@ -117,6 +117,7 @@ builder.Services.AddScoped<IWorkService, WorkService>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IMaterialDeliveryService, MaterialDeliveryService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
+builder.Services.AddScoped<ILeadTaskDelegationService, LeadTaskDelegationService>();
 builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection("Cloudinary"));
 builder.Services.AddScoped<IFileStorageService, CloudinaryFileStorageService>();
 builder.Services.AddScoped<INotificationPublisher, SignalRNotificationPublisher>();
