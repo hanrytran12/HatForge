@@ -27,6 +27,30 @@ public class ValidatorTests
     }
 
     [Fact]
+    public void CreateHatModel_EmptyName_Invalid()
+    {
+        var v = new CreateHatModelValidator();
+        var result = v.TestValidate(new CreateHatModelDto("", null));
+        result.ShouldHaveValidationErrorFor(x => x.Name);
+    }
+
+    [Fact]
+    public void CreateHatModel_Valid_Passes()
+    {
+        var v = new CreateHatModelValidator();
+        var result = v.TestValidate(new CreateHatModelDto("Fedora Classic", "Wool felt"));
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void UpdateHatModel_Valid_Passes()
+    {
+        var v = new UpdateHatModelValidator();
+        var result = v.TestValidate(new UpdateHatModelDto("Updated Fedora", "Wool felt"));
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
     public void PlanBatch_NoWorkshops_Invalid()
     {
         var v = new PlanBatchValidator();

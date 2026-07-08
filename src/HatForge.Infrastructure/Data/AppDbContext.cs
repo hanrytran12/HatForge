@@ -43,6 +43,8 @@ public class AppDbContext : DbContext
 
         b.Entity<HatModel>(e =>
         {
+            e.HasIndex(h => h.Code).IsUnique();
+            e.Property(h => h.Code).IsRequired().HasMaxLength(64);
             e.Property(h => h.Name).IsRequired().HasMaxLength(128);
         });
 

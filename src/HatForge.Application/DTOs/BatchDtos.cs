@@ -4,6 +4,7 @@ public record BatchDto(
     int Id,
     string BatchNumber,
     int HatModelId,
+    string HatModelCode,
     string HatModelName,
     string Status,
     int? AssignedToLeadId,
@@ -61,6 +62,7 @@ public record MaterialItemDto(
 public record BatchListDto(
     int Id,
     string BatchNumber,
+    string HatModelCode,
     string HatModelName,
     string Status,
     DateTime StartDate,

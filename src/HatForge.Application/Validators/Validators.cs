@@ -17,6 +17,28 @@ public class CreateBatchValidator : AbstractValidator<CreateBatchDto>
     }
 }
 
+public class CreateHatModelValidator : AbstractValidator<CreateHatModelDto>
+{
+    public CreateHatModelValidator()
+    {
+        RuleFor(x => x.Name)
+            .NotEmpty().WithMessage("Hat model name is required")
+            .MaximumLength(128);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
+public class UpdateHatModelValidator : AbstractValidator<UpdateHatModelDto>
+{
+    public UpdateHatModelValidator()
+    {
+        RuleFor(x => x.Name)
+            .NotEmpty().WithMessage("Hat model name is required")
+            .MaximumLength(128);
+        RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
 public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
 {
     public PlanBatchValidator()

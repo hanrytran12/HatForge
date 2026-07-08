@@ -30,7 +30,7 @@ public class DbSeederHostedService : IHostedService
         );
         await ctx.SaveChangesAsync();
 
-        ctx.HatModels.Add(new HatModel { Name = "Classic Fedora", Description = "Wool felt fedora" });
+        ctx.HatModels.Add(new HatModel { Code = "FEDORA-CLASSIC", Name = "Classic Fedora", Description = "Wool felt fedora" });
         await ctx.SaveChangesAsync();
 
         ctx.Users.AddRange(

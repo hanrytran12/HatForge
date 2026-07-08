@@ -40,7 +40,7 @@ public static class TestDataFactory
         { Id = id, Name = $"Workshop {id}", RequiresMaterials = requiresMaterials };
 
     public static HatModel HatModel(int id = 1) => new()
-        { Id = id, Name = "Fedora" };
+        { Id = id, Code = "FEDORA", Name = "Fedora" };
 
     public static async Task SeedBaseAsync(AppDbContext ctx)
     {
