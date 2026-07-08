@@ -86,6 +86,11 @@ public interface IUserService
     Task DeleteStaffAsync(int id);
 }
 
+public interface IAdminDashboardService
+{
+    Task<AdminDashboardDto> GetAsync();
+}
+
 public interface INotificationService
 {
     Task<IReadOnlyList<NotificationDto>> GetMyNotificationsAsync(int userId);
