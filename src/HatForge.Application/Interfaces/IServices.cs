@@ -18,6 +18,14 @@ public interface IBatchService
     Task<BatchFinalSummaryDto> GetFinalSummaryAsync(int batchId);
 }
 
+public interface IHatModelService
+{
+    Task<HatModelDto> CreateAsync(CreateHatModelDto dto);
+    Task<IReadOnlyList<HatModelDto>> GetAllAsync();
+    Task<HatModelDto> UpdateAsync(int id, UpdateHatModelDto dto);
+    Task DeleteAsync(int id);
+}
+
 public interface IWorkService
 {
     Task<WorkDto> SubmitWorkAsync(SubmitWorkDto dto, int staffId);

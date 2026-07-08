@@ -113,6 +113,7 @@ builder.Services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IBatchService, BatchService>();
+builder.Services.AddScoped<IHatModelService, HatModelService>();
 builder.Services.AddScoped<IWorkService, WorkService>();
 builder.Services.AddScoped<ITransferService, TransferService>();
 builder.Services.AddScoped<IMaterialDeliveryService, MaterialDeliveryService>();

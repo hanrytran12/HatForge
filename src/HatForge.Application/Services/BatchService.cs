@@ -224,7 +224,7 @@ public class BatchService : IBatchService
         return batches
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new BatchListDto(
-                x.Id, x.BatchNumber, x.HatModel?.Name ?? "",
+                x.Id, x.BatchNumber, x.HatModel?.Code ?? "", x.HatModel?.Name ?? "",
                 x.Status.ToString(), x.StartDate, x.EndDate, x.CreatedAt))
             .ToList();
     }
@@ -237,7 +237,7 @@ public class BatchService : IBatchService
         return batches
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new BatchListDto(
-                x.Id, x.BatchNumber, x.HatModel?.Name ?? "",
+                x.Id, x.BatchNumber, x.HatModel?.Code ?? "", x.HatModel?.Name ?? "",
                 x.Status.ToString(), x.StartDate, x.EndDate, x.CreatedAt))
             .ToList();
     }
@@ -445,7 +445,7 @@ public class BatchService : IBatchService
         return batches
             .OrderByDescending(x => x.CreatedAt)
             .Select(x => new BatchListDto(
-                x.Id, x.BatchNumber, x.HatModel?.Name ?? "",
+                x.Id, x.BatchNumber, x.HatModel?.Code ?? "", x.HatModel?.Name ?? "",
                 x.Status.ToString(), x.StartDate, x.EndDate, x.CreatedAt))
             .ToList();
     }
@@ -454,6 +454,7 @@ public class BatchService : IBatchService
         batch.Id,
         batch.BatchNumber,
         batch.HatModelId,
+        batch.HatModel?.Code ?? "",
         batch.HatModel?.Name ?? "",
         batch.Status.ToString(),
         batch.AssignedToLeadId,
