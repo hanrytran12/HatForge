@@ -30,6 +30,7 @@ public class AppDbContext : DbContext
             e.Property(u => u.Email).IsRequired().HasMaxLength(256);
             e.Property(u => u.Name).IsRequired().HasMaxLength(128);
             e.Property(u => u.PasswordHash).IsRequired();
+            e.Property(u => u.IsActive).HasDefaultValue(true);
             e.HasOne(u => u.Workshop)
                 .WithMany(w => w.Users)
                 .HasForeignKey(u => u.WorkshopId)

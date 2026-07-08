@@ -8,4 +8,4 @@ public record RegisterDto(string Email, string Password, string Name, UserRole R
 
 public record AuthResponseDto(string Token, int UserId, string Name, string Email, string Role, int? WorkshopId);
 
-public record UserDto(int Id, string Email, string Name, string Role, int? WorkshopId);
+public record UserDto(int Id, string Email, string Name, string Role, int? WorkshopId, string? WorkshopName, bool IsActive);

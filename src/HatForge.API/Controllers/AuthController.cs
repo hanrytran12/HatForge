@@ -18,9 +18,4 @@ public class AuthController : ControllerBase
     [AllowAnonymous]
     public async Task<ActionResult<ApiResponse<AuthResponseDto>>> Login([FromBody] LoginDto dto)
         => Ok(ApiResponse<AuthResponseDto>.Ok(await _authService.LoginAsync(dto)));
-
-    [HttpPost("register")]
-    [AllowAnonymous]
-    public async Task<ActionResult<ApiResponse<UserDto>>> Register([FromBody] RegisterDto dto)
-        => Ok(ApiResponse<UserDto>.Ok(await _authService.RegisterAsync(dto)));
 }

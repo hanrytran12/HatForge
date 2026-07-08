@@ -77,7 +77,13 @@ public interface ILeadTaskDelegationService
 public interface IAuthService
 {
     Task<AuthResponseDto> LoginAsync(LoginDto dto);
-    Task<UserDto> RegisterAsync(RegisterDto dto);
+}
+
+public interface IUserService
+{
+    Task<UserDto> CreateAsync(RegisterDto dto);
+    Task<IReadOnlyList<UserDto>> GetAllAsync();
+    Task DeleteStaffAsync(int id);
 }
 
 public interface INotificationService
