@@ -10,6 +10,7 @@ public class User
     public string Name { get; set; } = string.Empty;
     public UserRole Role { get; set; }
     public int? WorkshopId { get; set; }
+    public bool IsActive { get; set; } = true;
 
     public Workshop? Workshop { get; set; }
 }
