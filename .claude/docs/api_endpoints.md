@@ -20,14 +20,61 @@ No auth required.
 { "token": "string", "userId": int, "name": "string", "email": "string", "role": "string", "workshopId": int|null }
 ```
 
-### POST `/api/auth/register`
-No auth required.
+`AuthController` currently exposes login only. User creation is Admin-only through `/api/user`.
+
+---
+
+## Admin Dashboard — `/api/admin-dashboard`
+
+### GET `/api/admin-dashboard` — Role: Admin
+**Response `data`:** `AdminDashboardDto` with KPIs, batch status counts, latest pending Lead delegations, and active-user/staff summaries.
+
+---
+
+## User — `/api/user`
+
+### GET `/api/user` — Role: Admin
+Returns active users only.
+**Response `data`:** `UserDto[]`
+
+### POST `/api/user` — Role: Admin
 
 **Request:**
 ```json
-{ "name": "string", "email": "string", "password": "string", "role": int, "workshopId": int|null }
+{ "email": "string", "password": "string", "name": "string", "role": int, "workshopId": int|null }
 ```
-**Response `data`:** user DTO (same shape minus `token`).
+`workshopId` is required for `Staff` and `QCWorkshop`; it must be null for Admin, Lead, QCGate, and QCTransport.
+**Response `data`:** `UserDto`
+
+### DELETE `/api/user/{id}` — Role: Admin
+Soft-deletes an active Staff user (`IsActive = false`). This endpoint rejects non-Staff users and Staff whose workshop has active production work.
+**Response `data`:** `{ }`
+
+---
+
+## Hat Model — `/api/hatmodel`
+
+### GET `/api/hatmodel` — Any auth
+**Response `data`:** `HatModelDto[]`
+
+### POST `/api/hatmodel` — Role: Admin
+**Request:**
+```json
+{ "name": "string", "description": "string|null" }
+```
+The server generates `code` as `HAT-YYYYMMDD-XXXX`.
+**Response `data`:** `HatModelDto`
+
+### PUT `/api/hatmodel/{id}` — Role: Admin
+**Request:**
+```json
+{ "name": "string", "description": "string|null" }
+```
+**Response `data`:** `HatModelDto`
+
+### DELETE `/api/hatmodel/{id}` — Role: Admin
+Deletes a hat model only when no batch references it.
+**Response `data`:** `{ }`
 
 ---
 
@@ -346,4 +393,4 @@ All errors follow the same envelope:
 ## API Documentation
 
 - Swagger UI: `http://localhost:5235/swagger`
-- Scalar UI: available via Scalar.AspNetCore (check `Program.cs` for route)
+- Scalar.AspNetCore is referenced by the API project, but no Scalar route is currently mapped in `Program.cs`.

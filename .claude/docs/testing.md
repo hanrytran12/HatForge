@@ -22,16 +22,21 @@ src/HatForge.Tests/
 │   ├── TestDataFactory.cs           — AppDbContext + UnitOfWork, seed helpers
 │   └── NoOpNotificationPublisher.cs — no-op INotificationPublisher for service isolation
 ├── Unit/
-│   ├── BatchServiceTests.cs         — 7 tests
-│   ├── WorkServiceTests.cs          — 19 tests
-│   ├── TransferServiceTests.cs      — 11 tests
-│   ├── MaterialRequestServiceTests.cs — 16 tests
-│   └── ValidatorTests.cs            — 12 tests
+│   ├── AdminDashboardServiceTests.cs — 1 test
+│   ├── AuthServiceTests.cs          — 1 test
+│   ├── BatchServiceTests.cs         — 11 tests
+│   ├── HatModelServiceTests.cs      — 6 tests
+│   ├── LeadTaskDelegationServiceTests.cs — 16 tests
+│   ├── MaterialRequestServiceTests.cs — 28 tests
+│   ├── TransferServiceTests.cs      — 14 tests
+│   ├── UserServiceTests.cs          — 6 tests
+│   ├── ValidatorTests.cs            — 15 tests
+│   └── WorkServiceTests.cs          — 24 tests
 └── Integration/
     └── BatchWorkflowTests.cs        — 3 end-to-end tests
 ```
 
-Approximate total: ~70 tests.
+Total: 125 tests (`[Fact]` / `[Theory]` count).
 
 ---
 
@@ -59,7 +64,7 @@ This prevents state bleed between tests. Never share a context instance across t
 |---|---|
 | `CreateContext()` | AppDbContext backed by a fresh InMemory DB |
 | `CreateUnitOfWork(ctx)` | Wraps the context in `UnitOfWork` |
-| `Lead(id)` / `Staff(id, workshopId)` / `QcWorkshop(id, workshopId)` / `Admin(id)` / `QcGate(id)` | User with role baked in |
+| `Lead(id)` / `Staff(id, workshopId)` / `QcWorkshop(id, workshopId)` / `Admin(id)` / `QcGate(id)` / `QcTransport(id)` | User with role baked in |
 | `Workshop(id, requiresMaterials)` | Workshop entity |
 | `HatModel(id)` | HatModel entity |
 | `SeedBaseAsync(ctx)` | Seeds 1 Lead + 1 Staff + 1 QC + 1 Admin, 3 Workshops (workshop 3 requires materials), 1 HatModel |
@@ -86,6 +91,34 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 - Plan batch with wrong lead → throws `ForbiddenException`
 - Plan batch with `RequiresMaterials` but no delivery date → throws `BusinessRuleException`
 - Create batch with invalid lead ID → throws `NotFoundException`
+
+### AuthServiceTests
+- Login rejects inactive users
+
+### UserServiceTests
+- Admin-created users are active by default
+- Duplicate emails are rejected
+- Staff and QCWorkshop users require a workshop
+- Non-workshop roles reject workshop assignment
+- Staff delete is a soft delete (`IsActive = false`)
+- Delete blocks when the Staff user's workshop has active production work
+
+### HatModelServiceTests
+- Create generates a unique `HAT-YYYYMMDD-XXXX` code
+- Lists models ordered by code
+- Update trims and persists name/description
+- Delete rejects models referenced by batches
+- Delete missing model throws `NotFoundException`
+
+### AdminDashboardServiceTests
+- Dashboard returns KPIs, role counts, pending delegations, and staff work summaries
+
+### LeadTaskDelegationServiceTests
+- Lead creates Admin-reviewed delegations for material delivery, transfer approval, final review, and material request fulfillment
+- Admin approve/reject paths update request status and notes
+- QCTransport can execute only assigned, approved delegations
+- Active duplicate delegations are blocked by service rules
+- Delegated material delivery / supplemental fulfillment gates workshop QC receipt confirmation until transport marks delivered
 
 ### WorkServiceTests
 - Submit work — first workshop, happy path (staff only, no materials gate)

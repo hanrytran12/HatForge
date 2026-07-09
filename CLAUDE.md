@@ -22,7 +22,7 @@ material delivery scheduling, material top-up requests, and real-time push notif
 | Password hashing | BCrypt.Net-Next | 4.2.0 |
 | Validation | FluentValidation | 12.1.1 |
 | File storage | Cloudinary | 1.27.1 |
-| API docs | Swashbuckle + Scalar | 9.0.6 / 2.16.4 |
+| API docs | Swashbuckle UI; Scalar package referenced but not mapped | 9.0.6 / 2.16.4 |
 | JWT lib | System.IdentityModel.Tokens.Jwt | 8.19.1 |
 | Testing | xUnit + Moq + EF InMemory | 2.9.3 / 4.20.72 / 10.0.9 |
 
@@ -48,7 +48,8 @@ dotnet ef database update -p src/HatForge.Infrastructure -s src/HatForge.API
 ```
 
 Prerequisites: PostgreSQL running at `localhost:5432`, database `hatforge_db`.
-Cloudinary credentials required for photo uploads — already pre-configured in `appsettings.Development.json`.
+Cloudinary credentials are required for photo uploads. Keep local values in ignored
+`src/HatForge.API/appsettings.Development.json`, user secrets, or environment variables.
 
 ---
 

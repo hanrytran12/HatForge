@@ -20,8 +20,9 @@ evidence, QC quantity breakdowns, material budgeting, and push notifications at 
 - **Receipt inspection** — destination QC records usable vs. defective counts and inspection notes; non-rework submissions downstream are capped by received-usable quantity
 - **Material delivery + top-up workflow** — scheduled deliveries with actual quantities, auto-spawned shortfall requests (max 3 supplemental rounds), QC-initiated ad-hoc requests
 - **Material budgeting** — pre-charged estimate per submission, reconciled to QC-measured actual, low-stock alerts at 5m remaining
+- **Admin-approved Lead delegation** to QCTransport for material delivery, supplemental fulfillment, transfer approval, and final review
 - **Real-time push notifications** via SignalR (`/hubs/notifications`) plus a persisted in-app notification feed
-- **Role-based access control** across 5 roles: Admin, Lead, Staff, QCWorkshop, QCGate
+- **Role-based access control** across 6 roles: Admin, Lead, Staff, QCWorkshop, QCGate, QCTransport
 - **Clean Architecture** (Domain → Application → Infrastructure → API) with no AutoMapper, no MediatR, no DbContext in services
 
 ## Tech Stack
@@ -37,7 +38,7 @@ evidence, QC quantity breakdowns, material budgeting, and push notifications at 
 | Password hashing | BCrypt.Net-Next | 4.2.0 |
 | Validation | FluentValidation | 12.1.1 |
 | File storage | Cloudinary | 1.27.1 |
-| API docs | Swashbuckle + Scalar | 9.0.6 / 2.16.4 |
+| API docs | Swashbuckle UI; Scalar package referenced but not mapped | 9.0.6 / 2.16.4 |
 | JWT lib | System.IdentityModel.Tokens.Jwt | 8.19.1 |
 | Testing | xUnit + Moq + EF InMemory | 2.9.3 / 4.20.72 / 10.0.9 |
 
@@ -71,14 +72,15 @@ dotnet restore HatForge.slnx
 # 2. Create the database (PostgreSQL must be running on localhost:5432)
 createdb hatforge_db
 
-# 3. (Optional) Override the connection string in src/HatForge.API/appsettings.Development.json
+# 3. Override local settings in ignored src/HatForge.API/appsettings.Development.json
+#    or via user secrets / environment variables:
+#    ConnectionStrings:DefaultConnection, Jwt:Secret, Cloudinary:*
 
 # 4. Run — DbSeederHostedService auto-applies EF migrations on startup
 dotnet run --project src/HatForge.API
 # HTTP:   http://localhost:5235
 # HTTPS:  https://localhost:7150
 # Swagger: http://localhost:5235/swagger
-# Scalar:  http://localhost:5235/scalar/v1 (route defined in Program.cs)
 
 # 5. Tests
 dotnet test
@@ -98,6 +100,7 @@ dotnet test
 | qc1@hatforge.com | `Qc123!` | QC Workshop | Cutting |
 | qc2@hatforge.com | `Qc123!` | QC Workshop | Sewing |
 | qc3@hatforge.com | `Qc123!` | QC Workshop | Finishing |
+| transport@hatforge.com | `Transport123!` | QC Transport | — |
 | gate@hatforge.com | `Gate123!` | QC Gate | — |
 
 Workshops: `Cutting` (requires materials), `Sewing`, `Finishing`.
@@ -109,7 +112,10 @@ All responses use the envelope `{ success, data, error, errors }`.
 
 | Endpoint | Role |
 |---|---|
-| `POST /api/auth/login`, `POST /api/auth/register` | anonymous |
+| `POST /api/auth/login` | anonymous |
+| `GET /api/admin-dashboard` | Admin |
+| `GET /api/hatmodel`; `POST /api/hatmodel`, `PUT /api/hatmodel/{id}`, `DELETE /api/hatmodel/{id}` | any / Admin |
+| `GET /api/user`, `POST /api/user`, `DELETE /api/user/{id}` | Admin |
 | `POST /api/batch` | Admin |
 | `PUT /api/batch/{id}/plan` | Lead |
 | `GET /api/batch/my`, `GET /api/batch/pending-gate-qc`, `GET /api/batch`, `GET /api/batch/{id}`, `GET /api/batch/{id}/final-summary` | role-specific |
@@ -126,6 +132,7 @@ All responses use the envelope `{ success, data, error, errors }`.
 | `POST /api/material-request/ad-hoc` | QC Workshop |
 | `PUT /api/material-request/{id}/approve`, `GET /api/material-request/pending` | Lead |
 | `PUT /api/material-request/{id}/confirm`, `GET /api/material-request/batch/{batchId}` | QC Workshop / any |
+| `/api/lead-task-delegation/*` | Lead / Admin / QCTransport |
 | `GET /api/notification`, `GET /api/notification/unread-count`, `PUT /api/notification/{id}/read`, `PUT /api/notification/read-all` | any |
 
 Full request/response shapes: see [`.claude/docs/api_endpoints.md`](.claude/docs/api_endpoints.md).
@@ -158,7 +165,8 @@ Client methods: `JoinBatch(int)`, `JoinWorkshop(int)`, `JoinAdmins()`, `JoinLead
 Server pushes events like `WorkSubmitted`, `WorkApproved`, `WorkRejected`, `TransferRequested`,
 `TransferApproved`, `WorkCanBegin`, `MaterialDeliveryConfirmed`, `MaterialShortfall`,
 `MaterialRequestApproved`, `MaterialRequestFulfilled`, `AdHocMaterialRequest`, `MaterialLowAlert`,
-`FinalReviewRequested`, `GateQCReviewRequested`, `BatchCompleted`. See
+`FinalReviewRequested`, `GateQCReviewRequested`, `BatchCompleted`, `LeadTaskDelegationRequested`,
+`LeadTaskDelegationApproved`, `LeadTaskDelegationRejected`, `LeadTaskDelegationCompleted`. See
 [`.claude/docs/realtime.md`](.claude/docs/realtime.md) for the full event/group table.
 
 ## Project Structure

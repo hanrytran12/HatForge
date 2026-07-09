@@ -53,7 +53,7 @@ IUnitOfWork {
 }
 ```
 
-`IRepository<T>` supports: `GetByIdAsync`, `FindAsync` (with eager-load string array), `FirstOrDefaultAsync`, `AddAsync`, `Update`, `Remove`.
+`IRepository<T>` supports: `GetByIdAsync`, `GetByIdAsync(id, includes)`, `ListAllAsync`, `FindAsync` (with eager-load string array), `FirstOrDefaultAsync`, `AddAsync`, `Update`, `Remove`.
 
 No raw LINQ outside repositories. No `DbContext` references in Application or Domain.
 
@@ -115,12 +115,12 @@ Located in `HatForge.Infrastructure`. Exists solely for `dotnet ef` CLI tooling.
 
 ## Dependency Injection Registration
 
-All registrations happen in `Program.cs` / extension methods in the API project:
+Registrations happen in `Program.cs` plus `AddInfrastructure(...)`, which is called by the API project:
 - `AddScoped<IUnitOfWork, UnitOfWork>` (one per HTTP request)
-- `AddScoped<I*Service, *Service>` for all Application services (`BatchService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `LeadTaskDelegationService`, `AuthService`, `NotificationService`)
+- `AddScoped<I*Service, *Service>` for all Application services (`AdminDashboardService`, `AuthService`, `UserService`, `BatchService`, `HatModelService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `LeadTaskDelegationService`, `NotificationService`)
 - `AddScoped<INotificationPublisher, SignalRNotificationPublisher>`
 - `AddScoped<IFileStorageService, CloudinaryFileStorageService>`
-- `AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>`
+- `AddScoped<IJwtTokenGenerator, JwtTokenGenerator>`
 - `AddScoped<IPasswordHasher, PasswordHasher>`
 - FluentValidation validators auto-registered from `HatForge.Application` assembly
 

@@ -111,7 +111,8 @@ Unique index: `(BatchId, WorkshopId)`
 | Email | string | Unique, max 256 |
 | PasswordHash | string | BCrypt |
 | Role | UserRole | Admin=0, Lead=1, Staff=2, QCWorkshop=3, QCGate=4, QCTransport=5 |
-| WorkshopId | int? | Null for Admin, Lead, QCGate |
+| WorkshopId | int? | Null for Admin, Lead, QCGate, QCTransport |
+| IsActive | bool | Soft-delete flag; inactive users cannot log in and are hidden from Admin user lists |
 | Workshop | Workshop? | Nav |
 
 ### Work
@@ -254,8 +255,10 @@ Uniqueness: filtered unique indexes prevent duplicate active delegations per tar
 | Property | Type | Notes |
 |---|---|---|
 | Id | int | PK |
+| Code | string | Unique, max 64, generated as `HAT-YYYYMMDD-XXXX` |
 | Name | string | |
 | Description | string? | |
+| CreatedAt | DateTime | Server-stamped |
 
 ### Notification
 | Property | Type | Notes |
@@ -336,6 +339,8 @@ Defined but not currently wired to the `Work` entity.
 | Entity | Constraint |
 |---|---|
 | Batch.BatchNumber | Unique index, max 64 chars |
+| HatModel.Code | Unique index, max 64 chars |
+| HatModel.Name | Required, max 128 chars |
 | BatchWorkshop | Unique composite index (BatchId, WorkshopId) |
 | User.Email | Unique index, max 256 chars |
 | User.Name | Max 128 chars |

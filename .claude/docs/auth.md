@@ -46,7 +46,7 @@ Services receive these values as method parameters — they do not access `IHttp
 | Staff | 2 | Submits work with photos. Must be assigned to a workshop. |
 | QCWorkshop | 3 | Reviews work, initiates transfers, confirms receipts, confirms materials, creates ad-hoc material requests. Must be assigned to a workshop. |
 | QCGate | 4 | Final gate quality confirmation. No workshop assignment. |
-| QCTransport | 5 | Performs Admin-approved Lead delegation tasks for material delivery and transfer approval. No workshop assignment. |
+| QCTransport | 5 | Performs Admin-approved Lead delegation tasks for material delivery, supplemental material fulfillment, transfer approval, and final review. No workshop assignment. |
 
 ---
 
@@ -56,7 +56,26 @@ Services receive these values as method parameters — they do not access `IHttp
 | Action | Required Role |
 |---|---|
 | Login | Anonymous |
-| Register | Anonymous |
+
+### AdminDashboardController
+| Action | Required Role |
+|---|---|
+| `GET /api/admin-dashboard` | Admin |
+
+### UserController
+| Action | Required Role |
+|---|---|
+| `GET /api/user` | Admin |
+| `POST /api/user` | Admin |
+| `DELETE /api/user/{id}` | Admin |
+
+### HatModelController
+| Action | Required Role |
+|---|---|
+| `GET /api/hatmodel` | Any authenticated |
+| `POST /api/hatmodel` | Admin |
+| `PUT /api/hatmodel/{id}` | Admin |
+| `DELETE /api/hatmodel/{id}` | Admin |
 
 ### BatchController
 | Action | Required Role |
@@ -124,9 +143,9 @@ All actions: any authenticated user (operates on caller's own notifications only
 
 ---
 
-## Password Policy (Registration)
+## Password Policy (Admin User Creation)
 
-Enforced by FluentValidation (`RegisterValidator`):
+Enforced by FluentValidation (`RegisterValidator`) on `POST /api/user`:
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
@@ -173,4 +192,4 @@ JWT settings live in `appsettings.json` under the `Jwt` section:
 
 Tokens are issued with `Expires = DateTime.UtcNow.AddDays(7)` regardless of `ExpiryDays` configuration (the constant lives in `JwtTokenGenerator.cs`).
 
-The secret must be set via environment variable or `appsettings.Development.json` — never commit real secrets to source control.
+The secret must be set via environment variable, user secrets, or ignored `appsettings.Development.json` — never commit real secrets to source control.
