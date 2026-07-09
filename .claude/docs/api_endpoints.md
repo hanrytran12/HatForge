@@ -100,7 +100,7 @@ Deletes a hat model only when no batch references it.
       "endDate": "datetime",
       "materialDeliveryDate": "datetime?",  // required when requiresMaterials = true
       "materialItems": [                    // required when requiresMaterials = true
-        { "materialName": "string", "plannedQuantity": int }
+        { "materialName": "string", "plannedQuantity": int, "unit": "string (default: m)" }
       ],
       "estimatedMetersPerUnit": decimal      // required (>0) when requiresMaterials = true
     }
@@ -108,6 +108,8 @@ Deletes a hat model only when no batch references it.
 }
 ```
 **Response `data`:** `BatchDto`
+
+Planning is allowed only while the batch is `Assigned`. For material-requiring workshops, the server checks the assigned Lead's inventory by normalized `materialName + unit`, deducts the planned quantities only after the plan succeeds, and records `BatchPlanAllocation` stock transactions. If stock is missing or insufficient, the plan is rejected and no workshop plan is created.
 
 ### GET `/api/batch/my` — Role: Lead
 **Response `data`:** `BatchListDto[]`
@@ -249,8 +251,51 @@ Returns unconfirmed deliveries for the caller's workshop.
 ```
 **Response `data`:** `MaterialDeliveryDto`
 
+`actualQuantity` cannot exceed the item's `plannedQuantity`.
 If the workshop is the first in the batch chain and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
 If the delivery has an active Lead task delegation for QCTransport, QCWorkshop can confirm receipt only after QCTransport marks the delivery as `Delivered`.
+
+---
+
+## Lead Inventory — `/api/lead-inventory`
+
+All endpoints require role `Lead` and operate on the calling Lead's own central material stock.
+
+### GET `/api/lead-inventory` — Role: Lead
+Returns current stock rows grouped by normalized `materialName + unit`.
+**Response `data`:** `LeadMaterialStockDto[]`
+
+### GET `/api/lead-inventory/transactions` — Role: Lead
+Returns the allocation/audit ledger ordered newest first.
+**Response `data`:** `LeadMaterialStockTransactionDto[]`
+
+### POST `/api/lead-inventory/stock-in` — Role: Lead
+Adds quantity into inventory. If the material already exists with the same normalized name and unit, the quantity is incremented instead of creating a duplicate row.
+
+**Request:**
+```json
+{
+  "materialName": "string",
+  "unit": "string",
+  "quantity": decimal,
+  "notes": "string|null"
+}
+```
+**Response `data`:** `LeadMaterialStockDto`
+
+### POST `/api/lead-inventory/adjust` — Role: Lead
+Sets the on-hand quantity to an exact counted value. Use this for stock audits/corrections, not normal receiving. Example: if stock is currently `100` and `newQuantityOnHand = 92`, the resulting stock is `92` and the ledger records `-8`.
+
+**Request:**
+```json
+{
+  "materialName": "string",
+  "unit": "string",
+  "newQuantityOnHand": decimal,
+  "reason": "string"
+}
+```
+**Response `data`:** `LeadMaterialStockDto`
 
 ---
 
@@ -264,6 +309,8 @@ If the delivery has an active Lead task delegation for QCTransport, QCWorkshop c
 
 ### PUT `/api/material-request/{id}/approve` — Role: Lead
 **Response `data`:** `MaterialRequestDto`
+
+Approval validates and deducts the requested quantities from the assigned Lead's inventory, then records `MaterialRequestAllocation` transactions. If stock is missing or insufficient, the request remains `Pending`.
 
 ### POST `/api/material-request/ad-hoc` — Role: QCWorkshop
 **Request:**
@@ -291,7 +338,7 @@ Allowed only for the first workshop in the chain whose `Workshop.RequiresMateria
   ]
 }
 ```
-**Response `data`:** `MaterialRequestDto`. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
+**Response `data`:** `MaterialRequestDto`. `actualQuantity` cannot exceed the requested shortfall quantity. If items are still short and rounds remain, a new `Pending` request is returned (`Round` incremented); otherwise the request becomes `Fulfilled` and the workshop's `InitialMaterialQty` is bumped.
 If the material request has an active QCTransport delegation, QCWorkshop can confirm receipt only after QCTransport marks the request as delivered.
 `MaterialRequestDto` includes `deliveredByTransportQcId`, `deliveredByTransportQcName`, and `deliveredAt` when supplemental material fulfillment was delivered through QCTransport delegation.
 

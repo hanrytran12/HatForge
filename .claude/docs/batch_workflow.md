@@ -41,12 +41,16 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Effect:**
 - Validates: ≥1 workshop, no duplicate `WorkshopId`, no duplicate `OrderIndex`, every workshop exists
 - Per workshop: dates must be inside `[batch.StartDate, batch.EndDate]`, `EndDate > StartDate`
-- For workshops that `RequiresMaterials = true`: `MaterialDeliveryDate` required (must be in `[batch.StartDate, workshop.StartDate]`), at least one `MaterialItems` entry, `EstimatedMetersPerUnit > 0`
+- For workshops that `RequiresMaterials = true`: `MaterialDeliveryDate` required (must be in `[batch.StartDate, workshop.StartDate]`), at least one `MaterialItems` entry, each item has `MaterialName`, `Unit`, and `PlannedQuantity > 0`, `EstimatedMetersPerUnit > 0`
+- Aggregates planned material items by normalized `MaterialName + Unit`, validates the assigned Lead's central inventory, and rejects the plan if any stock is missing or insufficient
 - Wipes any prior `BatchWorkshop` rows for this batch (planning is fully replaceable while in `Assigned`)
 - Normalizes `OrderIndex` to 0-based sequential in server-sorted order
 - For each materials-requiring workshop: creates a `MaterialDelivery` (status `Scheduled`) and its `MaterialDeliveryItem` rows
+- Deducts planned material from Lead inventory after the plan succeeds and writes `LeadMaterialStockTransaction` rows with `Type = BatchPlanAllocation`
 - Status → `InProduction`
 - Notification: per workshop, that workshop's QC staff (`BatchPlanned`)
+
+`PUT /api/batch/{id}/plan` is not the endpoint for adding more material after a batch has already moved to `InProduction`. If a workshop later needs an additional material line, create a material request/top-up; Lead approval deducts only that requested quantity from inventory.
 
 ---
 
@@ -54,7 +58,7 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Actor:** QCWorkshop (of the receiving workshop)
 **Endpoint:** `PUT /api/material/confirm`
 **Effect:**
-- Records `ActualQuantity` per `MaterialDeliveryItem`
+- Records `ActualQuantity` per `MaterialDeliveryItem`; actual quantity cannot exceed the planned quantity for that item
 - Sets `BatchWorkshop.MaterialsReceived = true` and `InitialMaterialQty = SUM(ActualQuantity)`
 - Sets `MaterialDelivery.Status = Received`
 - Notification: Staff in workshop (`MaterialDeliveryConfirmed`)
@@ -254,7 +258,7 @@ These are off the main batch state machine but interact with `BatchWorkshop.Mate
 ### Shortfall request (auto, first-workshop only)
 1. `MaterialDeliveryService.ConfirmDeliveryAsync` records actuals
 2. If the workshop is `OrderIndex == 0` and any item was short, `MaterialRequestService.CreateRequestFromShortfallAsync` creates a `MaterialRequest` (`Pending`, `Round = previous + 1`)
-3. Lead approves → `Approved`
+3. Lead approves → validates Lead inventory, deducts requested quantities, records `MaterialRequestAllocation`, then sets request → `Approved`
 4. Same workshop's QC confirms → `Fulfilled`; `BatchWorkshop.InitialMaterialQty += total delivered`
 5. If the confirmation is still short, a new round is auto-spawned (subject to `MaxSupplementalRounds = 3`)
 
@@ -262,8 +266,14 @@ These are off the main batch state machine but interact with `BatchWorkshop.Mate
 1. `POST /api/material-request/ad-hoc` creates a `MaterialRequest { IsAdHoc = true, OriginalDeliveryId = null, Round = 1, Reason }`
 2. Allowed batch statuses: `InProduction`, `UnderQCReview`, `ReadyForTransfer`, `PendingLeadReview`
 3. Blocked if a prior `IsAdHoc` request is still `Pending` or `Approved` for the same workshop
-4. Lead approves → QC confirms (same path as shortfall requests above)
+4. Lead approves → inventory deduction happens exactly like shortfall requests, then QC confirms
 5. A `Confirmed` ad-hoc request unblocks a new one
+
+### Lead inventory semantics
+- `POST /api/lead-inventory/stock-in` is normal receiving: it adds to an existing stock row when `MaterialName + Unit` already exists, otherwise creates a new row.
+- `POST /api/lead-inventory/adjust` is a counted correction: it sets the exact on-hand quantity and records the delta. Example: current `100m`, adjust to `92m` → stock becomes `92m`, ledger delta `-8m`.
+- Initial batch planning deducts the whole submitted material plan once. Existing planned materials are not deducted again because the batch leaves `Assigned` after successful planning.
+- Post-plan additions should use material requests. If a workshop has 5 material lines and later needs 1 new line, only that new request is validated/deducted on Lead approval; the 5 existing planned lines stay as-is.
 
 ---
 

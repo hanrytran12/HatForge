@@ -42,6 +42,32 @@ public static class TestDataFactory
     public static HatModel HatModel(int id = 1) => new()
         { Id = id, Code = "FEDORA", Name = "Fedora" };
 
+    public static LeadMaterialStock LeadStock(
+        int leadId,
+        string materialName,
+        string unit,
+        decimal quantity) => new()
+    {
+        LeadId = leadId,
+        MaterialName = materialName,
+        NormalizedMaterialName = materialName.Trim().ToUpperInvariant(),
+        Unit = unit.Trim().ToLowerInvariant(),
+        QuantityOnHand = quantity,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow
+    };
+
+    public static async Task SeedLeadStockAsync(
+        AppDbContext ctx,
+        int leadId,
+        string materialName,
+        string unit,
+        decimal quantity)
+    {
+        ctx.LeadMaterialStocks.Add(LeadStock(leadId, materialName, unit, quantity));
+        await ctx.SaveChangesAsync();
+    }
+
     public static async Task SeedBaseAsync(AppDbContext ctx)
     {
         ctx.Users.AddRange(Lead(), Staff(), QcWorkshop(), Admin());

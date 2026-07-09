@@ -19,6 +19,8 @@ public class AppDbContext : DbContext
     public DbSet<MaterialDeliveryItem> MaterialDeliveryItems => Set<MaterialDeliveryItem>();
     public DbSet<MaterialRequest> MaterialRequests => Set<MaterialRequest>();
     public DbSet<MaterialRequestItem> MaterialRequestItems => Set<MaterialRequestItem>();
+    public DbSet<LeadMaterialStock> LeadMaterialStocks => Set<LeadMaterialStock>();
+    public DbSet<LeadMaterialStockTransaction> LeadMaterialStockTransactions => Set<LeadMaterialStockTransaction>();
     public DbSet<LeadTaskDelegationRequest> LeadTaskDelegationRequests => Set<LeadTaskDelegationRequest>();
     public DbSet<Notification> Notifications => Set<Notification>();
 
@@ -155,6 +157,7 @@ public class AppDbContext : DbContext
         b.Entity<MaterialDeliveryItem>(e =>
         {
             e.Property(x => x.MaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Unit).IsRequired().HasMaxLength(32).HasDefaultValue("m");
             e.HasOne(x => x.MaterialDelivery)
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.MaterialDeliveryId)
@@ -203,6 +206,56 @@ public class AppDbContext : DbContext
                 .WithMany(x => x.Items)
                 .HasForeignKey(x => x.MaterialRequestId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<LeadMaterialStock>(e =>
+        {
+            e.HasIndex(x => new { x.LeadId, x.NormalizedMaterialName, x.Unit }).IsUnique();
+            e.Property(x => x.MaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.NormalizedMaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Unit).IsRequired().HasMaxLength(32);
+            e.Property(x => x.QuantityOnHand).HasPrecision(18, 2);
+            e.HasOne(x => x.Lead)
+                .WithMany()
+                .HasForeignKey(x => x.LeadId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        b.Entity<LeadMaterialStockTransaction>(e =>
+        {
+            e.HasIndex(x => new { x.LeadId, x.CreatedAt });
+            e.HasIndex(x => x.BatchId);
+            e.HasIndex(x => x.MaterialRequestId);
+            e.Property(x => x.MaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.NormalizedMaterialName).IsRequired().HasMaxLength(256);
+            e.Property(x => x.Unit).IsRequired().HasMaxLength(32);
+            e.Property(x => x.QuantityDelta).HasPrecision(18, 2);
+            e.Property(x => x.QuantityAfter).HasPrecision(18, 2);
+            e.Property(x => x.Notes).HasMaxLength(500);
+            e.HasOne(x => x.LeadMaterialStock)
+                .WithMany(x => x.Transactions)
+                .HasForeignKey(x => x.LeadMaterialStockId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Lead)
+                .WithMany()
+                .HasForeignKey(x => x.LeadId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.CreatedByUser)
+                .WithMany()
+                .HasForeignKey(x => x.CreatedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Batch)
+                .WithMany()
+                .HasForeignKey(x => x.BatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.MaterialDelivery)
+                .WithMany()
+                .HasForeignKey(x => x.MaterialDeliveryId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(x => x.MaterialRequest)
+                .WithMany()
+                .HasForeignKey(x => x.MaterialRequestId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         b.Entity<LeadTaskDelegationRequest>(e =>

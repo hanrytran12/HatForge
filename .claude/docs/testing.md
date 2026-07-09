@@ -24,10 +24,11 @@ src/HatForge.Tests/
 ├── Unit/
 │   ├── AdminDashboardServiceTests.cs — 1 test
 │   ├── AuthServiceTests.cs          — 1 test
-│   ├── BatchServiceTests.cs         — 11 tests
+│   ├── BatchServiceTests.cs         — 12 tests
 │   ├── HatModelServiceTests.cs      — 6 tests
+│   ├── LeadInventoryServiceTests.cs — 4 tests
 │   ├── LeadTaskDelegationServiceTests.cs — 16 tests
-│   ├── MaterialRequestServiceTests.cs — 28 tests
+│   ├── MaterialRequestServiceTests.cs — 29 tests
 │   ├── TransferServiceTests.cs      — 14 tests
 │   ├── UserServiceTests.cs          — 6 tests
 │   ├── ValidatorTests.cs            — 15 tests
@@ -36,7 +37,7 @@ src/HatForge.Tests/
     └── BatchWorkflowTests.cs        — 3 end-to-end tests
 ```
 
-Total: 125 tests (`[Fact]` / `[Theory]` count).
+Total: 131 tests (`[Fact]` / `[Theory]` count).
 
 ---
 
@@ -67,6 +68,7 @@ This prevents state bleed between tests. Never share a context instance across t
 | `Lead(id)` / `Staff(id, workshopId)` / `QcWorkshop(id, workshopId)` / `Admin(id)` / `QcGate(id)` / `QcTransport(id)` | User with role baked in |
 | `Workshop(id, requiresMaterials)` | Workshop entity |
 | `HatModel(id)` | HatModel entity |
+| `LeadStock(...)` / `SeedLeadStockAsync(...)` | Lead central material stock for inventory allocation tests |
 | `SeedBaseAsync(ctx)` | Seeds 1 Lead + 1 Staff + 1 QC + 1 Admin, 3 Workshops (workshop 3 requires materials), 1 HatModel |
 
 Always call `SeedBaseAsync(ctx)` (or equivalent inserts) followed by `await ctx.SaveChangesAsync()` before instantiating services.
@@ -88,6 +90,8 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 - BatchNumber sequence increments correctly within same day
 - Create batch with end-before-start → throws `BusinessRuleException`
 - Plan batch with workshops and materials
+- Plan batch deducts assigned material from Lead inventory and writes stock ledger rows
+- Plan batch with insufficient Lead inventory rejects and leaves no plan behind
 - Plan batch with wrong lead → throws `ForbiddenException`
 - Plan batch with `RequiresMaterials` but no delivery date → throws `BusinessRuleException`
 - Create batch with invalid lead ID → throws `NotFoundException`
@@ -119,6 +123,12 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 - QCTransport can execute only assigned, approved delegations
 - Active duplicate delegations are blocked by service rules
 - Delegated material delivery / supplemental fulfillment gates workshop QC receipt confirmation until transport marks delivered
+
+### LeadInventoryServiceTests
+- `StockInAsync` creates a new stock row and stock-in ledger entry
+- `StockInAsync` normalizes material name/unit and increments an existing stock row
+- `AdjustAsync` sets exact on-hand quantity and records the delta
+- Non-Lead callers are rejected
 
 ### WorkServiceTests
 - Submit work — first workshop, happy path (staff only, no materials gate)
@@ -158,10 +168,11 @@ Shortfall flow (auto from delivery confirmation):
 - Single-item short → creates `MaterialRequest` with one item, status `Pending`
 - All items exact → no request created
 - Shortfall on a non-first workshop → no request created
-- Oversupply (actual ≥ planned) → no request created
-- `ApproveAsync` — assigned lead → `Approved`
+- Oversupply during delivery confirmation is rejected when actual quantity exceeds planned quantity
+- `ApproveAsync` — assigned lead → validates/deducts Lead inventory, writes ledger, and sets `Approved`
 - `ApproveAsync` — wrong lead → `ForbiddenException`
 - `ApproveAsync` — already approved → throws
+- `ApproveAsync` — insufficient Lead inventory leaves the request `Pending`
 - `ConfirmAsync` — all satisfied → `Fulfilled`
 - `ConfirmAsync` — still short → auto-creates next round, returns the new pending DTO
 - `ConfirmAsync` — wrong workshop QC → `ForbiddenException`

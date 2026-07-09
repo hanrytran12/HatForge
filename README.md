@@ -18,6 +18,7 @@ evidence, QC quantity breakdowns, material budgeting, and push notifications at 
 - **Staff submission with photo evidence** (Cloudinary) and rework resubmission
 - **QC review with quantity breakdown** — `passed / repairable / unrepairable` per work item, surfaced as quality issues on transfer
 - **Receipt inspection** — destination QC records usable vs. defective counts and inspection notes; non-rework submissions downstream are capped by received-usable quantity
+- **Lead material inventory** — Lead owns a central raw-material stock, can stock in or adjust on-hand quantities, and every allocation is ledgered
 - **Material delivery + top-up workflow** — scheduled deliveries with actual quantities, auto-spawned shortfall requests (max 3 supplemental rounds), QC-initiated ad-hoc requests
 - **Material budgeting** — pre-charged estimate per submission, reconciled to QC-measured actual, low-stock alerts at 5m remaining
 - **Admin-approved Lead delegation** to QCTransport for material delivery, supplemental fulfillment, transfer approval, and final review
@@ -128,6 +129,7 @@ All responses use the envelope `{ success, data, error, errors }`.
 | `PUT /api/transfer/approve` | Lead |
 | `PUT /api/transfer/confirm-receipt` (inspection quantities) | QC Workshop |
 | `GET /api/transfer/pending`, `GET /api/transfer/awaiting-receipt` | Lead / QC Workshop |
+| `GET /api/lead-inventory`, `GET /api/lead-inventory/transactions`, `POST /api/lead-inventory/stock-in`, `POST /api/lead-inventory/adjust` | Lead |
 | `GET /api/material/pending`, `PUT /api/material/confirm` | QC Workshop |
 | `POST /api/material-request/ad-hoc` | QC Workshop |
 | `PUT /api/material-request/{id}/approve`, `GET /api/material-request/pending` | Lead |
@@ -139,19 +141,21 @@ Full request/response shapes: see [`.claude/docs/api_endpoints.md`](.claude/docs
 
 ## Key Workflows
 
-1. **Batch creation → planning** — Admin creates a batch, Lead plans the workshop chain (optionally
-   scheduling material deliveries with `EstimatedMetersPerUnit`).
-2. **Material delivery** — Receiving QC confirms actual quantities; if the workshop is first in chain
+1. **Lead inventory setup** — Lead stocks raw materials into a central inventory. `stock-in` adds quantity;
+   `adjust` sets the actual on-hand quantity for corrections/audits.
+2. **Batch creation → planning** — Admin creates a batch, Lead plans the workshop chain. Material-requiring
+   workshops validate stock availability and deduct their planned material from Lead inventory when planning succeeds.
+3. **Material delivery** — Receiving QC confirms actual quantities; if the workshop is first in chain
    and items were short, a top-up request is auto-created.
-3. **Work submission** — Staff uploads photos and a quantity. Material is pre-charged
+4. **Work submission** — Staff uploads photos and a quantity. Material is pre-charged
    (`quantity * EstimatedMetersPerUnit`).
-4. **QC review** — QC approves (records `actualMaterialUsed`, reconciles the estimate) or rejects with a
+5. **QC review** — QC approves (records `actualMaterialUsed`, reconciles the estimate) or rejects with a
    `passed / repairable / unrepairable` breakdown.
-5. **Transfer** — QC of the source workshop creates a transfer; the server picks the next workshop by
+6. **Transfer** — QC of the source workshop creates a transfer; the server picks the next workshop by
    `OrderIndex`. Lead approves. Destination QC confirms receipt with usable + defective counts
    (`usable + defective` must equal the approved quantity). For the last workshop, transfer creation
    instead escalates the batch to `PendingLeadReview`.
-6. **Lead final review → QC Gate** — Lead approves final, QCGate confirms and the batch is marked
+7. **Lead final review → QC Gate** — Lead approves final, QCGate confirms and the batch is marked
    `Completed` with `CompletedQuantity` auto-computed from the last workshop's `PassedQuantity`.
 
 ## SignalR Hub

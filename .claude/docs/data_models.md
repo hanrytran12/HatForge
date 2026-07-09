@@ -5,6 +5,8 @@
 ```
 HatModel (1) ──────────────── (*) Batch
 User [Lead] (1) ────────────── (*) Batch.AssignedToLead
+User [Lead] (1) ────────────── (*) LeadMaterialStock
+User [Lead] (1) ────────────── (*) LeadMaterialStockTransaction
 
 Batch (1) ──────────────────── (*) BatchWorkshop ── (1) Workshop
 Batch (1) ──────────────────── (*) Work
@@ -42,6 +44,11 @@ MaterialRequest (*) ── (1) User [CreatedByQC]
 MaterialRequest (*) ── (0..1) User [ApprovedByLead]
 MaterialRequest (*) ── (0..1) User [DeliveredByTransportQc]
 MaterialRequest (*) ── (0..1) User [FulfilledByQC]
+
+LeadMaterialStock (1) ──────── (*) LeadMaterialStockTransaction
+LeadMaterialStockTransaction (*) ── (0..1) Batch
+LeadMaterialStockTransaction (*) ── (0..1) MaterialDelivery
+LeadMaterialStockTransaction (*) ── (0..1) MaterialRequest
 
 LeadTaskDelegationRequest (*) ── (1) Batch
 LeadTaskDelegationRequest (*) ── (0..1) MaterialDelivery
@@ -188,8 +195,45 @@ Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuanti
 | Id | int | PK |
 | MaterialDeliveryId | int | FK → MaterialDelivery |
 | MaterialName | string | Max 256 |
+| Unit | string | Max 32, defaults to `m` |
 | PlannedQuantity | int | |
 | ActualQuantity | int | Filled when QC confirms; sum of `ActualQuantity` is written to `BatchWorkshop.InitialMaterialQty` |
+
+`ActualQuantity` cannot exceed `PlannedQuantity`.
+
+### LeadMaterialStock
+| Property | Type | Notes |
+|---|---|---|
+| Id | int | PK |
+| LeadId | int | FK → User (Lead) |
+| MaterialName | string | Display name, max 256 |
+| NormalizedMaterialName | string | Uppercase lookup key, max 256 |
+| Unit | string | Normalized lowercase unit, max 32 |
+| QuantityOnHand | decimal | Current central-stock quantity |
+| CreatedAt | DateTime | Server-stamped |
+| UpdatedAt | DateTime | Updated on every stock movement |
+| Transactions | ICollection\<LeadMaterialStockTransaction\> | Ledger rows |
+
+Unique index: `(LeadId, NormalizedMaterialName, Unit)`. `stock-in` reuses this row when the same material/unit already exists; `adjust` sets `QuantityOnHand` to an exact counted value.
+
+### LeadMaterialStockTransaction
+| Property | Type | Notes |
+|---|---|---|
+| Id | int | PK |
+| LeadMaterialStockId | int | FK → LeadMaterialStock |
+| LeadId | int | FK → User (Lead) |
+| MaterialName | string | Snapshot display name |
+| NormalizedMaterialName | string | Snapshot lookup key |
+| Unit | string | Snapshot unit |
+| QuantityDelta | decimal | Positive for stock-in/increase; negative for allocation/decrease |
+| QuantityAfter | decimal | Stock balance after this movement |
+| Type | LeadMaterialStockTransactionType | Persisted as int |
+| BatchId | int? | Set for batch-planning allocations |
+| MaterialDeliveryId | int? | Set for initial material-delivery allocation |
+| MaterialRequestId | int? | Set for supplemental/ad-hoc request allocation |
+| CreatedByUserId | int | User who caused the movement |
+| CreatedAt | DateTime | Server-stamped |
+| Notes | string? | Max 500 |
 
 ### MaterialRequest
 | Property | Type | Notes |
@@ -306,6 +350,11 @@ Pending = 0, Approved = 1, Transferred = 2
 Scheduled = 0, Delivered = 1, Received = 2
 ```
 
+### LeadMaterialStockTransactionType
+```csharp
+StockIn = 0, Adjustment = 1, BatchPlanAllocation = 2, MaterialRequestAllocation = 3
+```
+
 ### MaterialRequestStatus
 ```csharp
 Pending = 0, Approved = 1, Fulfilled = 2
@@ -348,7 +397,10 @@ Defined but not currently wired to the `Work` entity.
 | PhotoUrl | Max 512 chars |
 | RejectionNotes | Max 500 chars |
 | MaterialName | Max 256 chars |
+| MaterialDeliveryItem.Unit | Max 32 chars, default `m` |
 | MaterialRequestItem.Unit | Max 32 chars |
+| LeadMaterialStock | Unique composite index (LeadId, NormalizedMaterialName, Unit); name max 256, unit max 32, quantity precision 18,2 |
+| LeadMaterialStockTransaction | Indexed by (LeadId, CreatedAt), BatchId, MaterialRequestId; notes max 500, quantity precision 18,2 |
 | LeadTaskDelegationRequest.Reason / AdminNotes | Max 500 chars |
 | Delete behavior | `Restrict` on Workshop/User FKs; `Cascade` on Batch child records; `SetNull` on optional reviewer/approver FKs |
 

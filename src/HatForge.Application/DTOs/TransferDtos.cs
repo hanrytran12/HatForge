@@ -71,7 +71,8 @@ public record MaterialDeliveryItemDto(
     int Id,
     string MaterialName,
     int PlannedQuantity,
-    int ActualQuantity
+    int ActualQuantity,
+    string Unit = "m"
 );
 
 public record ConfirmMaterialDeliveryDto(

@@ -43,6 +43,8 @@ IUnitOfWork {
     IRepository<MaterialDeliveryItem> MaterialDeliveryItems;
     IRepository<MaterialRequest>     MaterialRequests;
     IRepository<MaterialRequestItem> MaterialRequestItems;
+    IRepository<LeadMaterialStock>   LeadMaterialStocks;
+    IRepository<LeadMaterialStockTransaction> LeadMaterialStockTransactions;
     IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests;
     IRepository<BatchWorkshop>       BatchWorkshops;
     IRepository<Workshop>           Workshops;
@@ -50,10 +52,13 @@ IUnitOfWork {
     IRepository<User>                Users;
     IRepository<Notification>        Notifications;
     Task<int> SaveChangesAsync();
+    Task ExecuteInTransactionAsync(Func<Task> action);
 }
 ```
 
 `IRepository<T>` supports: `GetByIdAsync`, `GetByIdAsync(id, includes)`, `ListAllAsync`, `FindAsync` (with eager-load string array), `FirstOrDefaultAsync`, `AddAsync`, `Update`, `Remove`.
+
+`ExecuteInTransactionAsync` wraps multi-entity workflows such as Lead inventory allocation plus batch planning/request approval. The EF InMemory provider executes the action directly for tests.
 
 No raw LINQ outside repositories. No `DbContext` references in Application or Domain.
 
@@ -117,7 +122,7 @@ Located in `HatForge.Infrastructure`. Exists solely for `dotnet ef` CLI tooling.
 
 Registrations happen in `Program.cs` plus `AddInfrastructure(...)`, which is called by the API project:
 - `AddScoped<IUnitOfWork, UnitOfWork>` (one per HTTP request)
-- `AddScoped<I*Service, *Service>` for all Application services (`AdminDashboardService`, `AuthService`, `UserService`, `BatchService`, `HatModelService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `LeadTaskDelegationService`, `NotificationService`)
+- `AddScoped<I*Service, *Service>` for all Application services (`AdminDashboardService`, `AuthService`, `UserService`, `BatchService`, `HatModelService`, `WorkService`, `TransferService`, `MaterialDeliveryService`, `MaterialRequestService`, `LeadInventoryService`, `LeadTaskDelegationService`, `NotificationService`)
 - `AddScoped<INotificationPublisher, SignalRNotificationPublisher>`
 - `AddScoped<IFileStorageService, CloudinaryFileStorageService>`
 - `AddScoped<IJwtTokenGenerator, JwtTokenGenerator>`
@@ -153,4 +158,6 @@ LowMaterialThresholdMeters = 5m
 
 `WorkService` reconciles `BatchWorkshop.MaterialUsed` against the QC-measured `ActualMaterialUsed` after every approve/reject, and emits a `MaterialLowAlert` (via `INotificationPublisher`) when the remaining budget drops to or below the threshold.
 
-Shortfall and ad-hoc top-up requests are managed by `MaterialRequestService`. Maximum 3 supplemental rounds (`MaxSupplementalRounds = 3`); a fourth still-short confirmation throws `BusinessRuleException`.
+`LeadInventoryService` owns the Lead's central raw-material stock. `stock-in` adds to inventory, `adjust` sets a counted on-hand quantity, and every stock movement creates a `LeadMaterialStockTransaction` ledger row.
+
+`BatchService.PlanBatchAsync` validates and deducts planned material from Lead inventory when the batch plan succeeds. `MaterialRequestService.ApproveAsync` validates and deducts supplemental/ad-hoc material when Lead approves a request. Shortfall and ad-hoc top-up requests are managed by `MaterialRequestService`. Maximum 3 supplemental rounds (`MaxSupplementalRounds = 3`); a fourth still-short confirmation throws `BusinessRuleException`.

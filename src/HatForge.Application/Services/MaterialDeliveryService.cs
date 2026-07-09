@@ -76,6 +76,10 @@ public class MaterialDeliveryService : IMaterialDeliveryService
             var item = delivery.Items.FirstOrDefault(x => x.Id == confirmItem.ItemId)
                 ?? throw new NotFoundException($"Material item {confirmItem.ItemId} not found in this delivery");
 
+            if (confirmItem.ActualQuantity > item.PlannedQuantity)
+                throw new BusinessRuleException(
+                    $"Actual quantity for {item.MaterialName} cannot exceed the planned quantity ({item.PlannedQuantity})");
+
             item.ActualQuantity = confirmItem.ActualQuantity;
             _unitOfWork.MaterialDeliveryItems.Update(item);
         }
@@ -134,5 +138,5 @@ public class MaterialDeliveryService : IMaterialDeliveryService
         d.ScheduledDate, d.DeliveredDate,
         d.IsConfirmed, d.Status.ToString(),
         d.Items.Select(i => new MaterialDeliveryItemDto(
-            i.Id, i.MaterialName, i.PlannedQuantity, i.ActualQuantity)).ToList());
+            i.Id, i.MaterialName, i.PlannedQuantity, i.ActualQuantity, i.Unit)).ToList());
 }

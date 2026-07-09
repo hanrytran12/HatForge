@@ -12,6 +12,8 @@ public interface IUnitOfWork : IDisposable
     IRepository<MaterialDeliveryItem> MaterialDeliveryItems { get; }
     IRepository<MaterialRequest> MaterialRequests { get; }
     IRepository<MaterialRequestItem> MaterialRequestItems { get; }
+    IRepository<LeadMaterialStock> LeadMaterialStocks { get; }
+    IRepository<LeadMaterialStockTransaction> LeadMaterialStockTransactions { get; }
     IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests { get; }
     IRepository<BatchWorkshop> BatchWorkshops { get; }
     IRepository<Workshop> Workshops { get; }
@@ -20,4 +22,5 @@ public interface IUnitOfWork : IDisposable
     IRepository<Notification> Notifications { get; }
 
     Task<int> SaveChangesAsync();
+    Task ExecuteInTransactionAsync(Func<Task> action);
 }

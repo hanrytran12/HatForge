@@ -41,7 +41,7 @@ public class MaterialRequestService : IMaterialRequestService
             {
                 i.Id,
                 i.MaterialName,
-                Unit = "",
+                Unit = i.Unit,
                 Shortfall = i.PlannedQuantity - i.ActualQuantity
             })
             .ToList();
@@ -251,11 +251,30 @@ public class MaterialRequestService : IMaterialRequestService
         if (batch.AssignedToLeadId != leadId)
             throw new ForbiddenException("Only the assigned lead can approve this material request");
 
-        request.Status = MaterialRequestStatus.Approved;
-        request.ApprovedByLeadId = leadId;
-        request.ApprovedAt = DateTime.UtcNow;
-        _unitOfWork.MaterialRequests.Update(request);
-        await _unitOfWork.SaveChangesAsync();
+        var requestItems = await _unitOfWork.MaterialRequestItems.FindAsync(x => x.MaterialRequestId == request.Id);
+        await EnsureLeadInventoryAvailableAsync(leadId, requestItems);
+
+        await _unitOfWork.ExecuteInTransactionAsync(async () =>
+        {
+            request.Status = MaterialRequestStatus.Approved;
+            request.ApprovedByLeadId = leadId;
+            request.ApprovedAt = DateTime.UtcNow;
+            _unitOfWork.MaterialRequests.Update(request);
+
+            foreach (var item in requestItems)
+            {
+                await DeductLeadInventoryAsync(
+                    leadId,
+                    item.MaterialName,
+                    item.Unit,
+                    item.ShortfallQuantity,
+                    request.BatchId,
+                    request.Id,
+                    $"Allocated to material request {request.Id}");
+            }
+
+            await _unitOfWork.SaveChangesAsync();
+        });
 
         int notifyWorkshopId = request.WorkshopId;
         if (request.OriginalDeliveryId is int deliveryId)
@@ -332,6 +351,10 @@ public class MaterialRequestService : IMaterialRequestService
 
             var item = items.FirstOrDefault(x => x.Id == confirmItem.ItemId)
                 ?? throw new NotFoundException($"Material request item {confirmItem.ItemId} not found");
+
+            if (confirmItem.ActualQuantity > item.ShortfallQuantity)
+                throw new BusinessRuleException(
+                    $"Actual quantity for {item.MaterialName} cannot exceed the requested quantity ({item.ShortfallQuantity})");
 
             item.ActualQuantity = confirmItem.ActualQuantity;
             _unitOfWork.MaterialRequestItems.Update(item);
@@ -436,6 +459,88 @@ public class MaterialRequestService : IMaterialRequestService
 
         if (activeDelegation != null)
             throw new BusinessRuleException("Material request is waiting for QC Transport to mark it as delivered");
+    }
+
+    private async Task EnsureLeadInventoryAvailableAsync(
+        int leadId,
+        IReadOnlyList<MaterialRequestItem> items)
+    {
+        var totals = items
+            .GroupBy(x => new
+            {
+                NormalizedMaterialName = LeadInventoryService.NormalizeMaterialName(x.MaterialName),
+                Unit = LeadInventoryService.NormalizeUnit(x.Unit)
+            })
+            .Select(g => new
+            {
+                MaterialName = LeadInventoryService.CleanMaterialName(g.First().MaterialName),
+                g.Key.NormalizedMaterialName,
+                g.Key.Unit,
+                RequiredQuantity = g.Sum(x => x.ShortfallQuantity)
+            })
+            .ToList();
+
+        foreach (var total in totals)
+        {
+            var stock = await _unitOfWork.LeadMaterialStocks.FirstOrDefaultAsync(x =>
+                x.LeadId == leadId
+                && x.NormalizedMaterialName == total.NormalizedMaterialName
+                && x.Unit == total.Unit);
+
+            if (stock == null)
+                throw new BusinessRuleException(
+                    $"Material {total.MaterialName} ({total.Unit}) is not available in the lead inventory");
+
+            if (stock.QuantityOnHand < total.RequiredQuantity)
+                throw new BusinessRuleException(
+                    $"Insufficient stock for {stock.MaterialName} ({stock.Unit}): required {total.RequiredQuantity}, available {stock.QuantityOnHand}");
+        }
+    }
+
+    private async Task DeductLeadInventoryAsync(
+        int leadId,
+        string materialName,
+        string unit,
+        decimal quantity,
+        int batchId,
+        int materialRequestId,
+        string? notes)
+    {
+        if (quantity <= 0)
+            throw new BusinessRuleException("Allocated material quantity must be greater than 0");
+
+        var normalizedMaterialName = LeadInventoryService.NormalizeMaterialName(materialName);
+        var normalizedUnit = LeadInventoryService.NormalizeUnit(unit);
+        var stock = await _unitOfWork.LeadMaterialStocks.FirstOrDefaultAsync(x =>
+            x.LeadId == leadId
+            && x.NormalizedMaterialName == normalizedMaterialName
+            && x.Unit == normalizedUnit)
+            ?? throw new BusinessRuleException(
+                $"Material {materialName} ({normalizedUnit}) is not available in the lead inventory");
+
+        if (stock.QuantityOnHand < quantity)
+            throw new BusinessRuleException(
+                $"Insufficient stock for {stock.MaterialName} ({stock.Unit}): required {quantity}, available {stock.QuantityOnHand}");
+
+        stock.QuantityOnHand -= quantity;
+        stock.UpdatedAt = DateTime.UtcNow;
+        _unitOfWork.LeadMaterialStocks.Update(stock);
+
+        await _unitOfWork.LeadMaterialStockTransactions.AddAsync(new LeadMaterialStockTransaction
+        {
+            LeadMaterialStockId = stock.Id,
+            LeadId = leadId,
+            MaterialName = stock.MaterialName,
+            NormalizedMaterialName = stock.NormalizedMaterialName,
+            Unit = stock.Unit,
+            QuantityDelta = -quantity,
+            QuantityAfter = stock.QuantityOnHand,
+            Type = LeadMaterialStockTransactionType.MaterialRequestAllocation,
+            BatchId = batchId,
+            MaterialRequestId = materialRequestId,
+            CreatedByUserId = leadId,
+            Notes = notes
+        });
     }
 
     private async Task<MaterialRequestDto> MapToDtoAsync(int id)

@@ -5,6 +5,7 @@ public class MaterialDeliveryItem
     public int Id { get; set; }
     public int MaterialDeliveryId { get; set; }
     public string MaterialName { get; set; } = string.Empty;
+    public string Unit { get; set; } = "m";
     public int PlannedQuantity { get; set; }
     public int ActualQuantity { get; set; }   // filled when QC confirms
 

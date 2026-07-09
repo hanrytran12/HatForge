@@ -60,6 +60,14 @@ public interface IMaterialRequestService
     Task<MaterialRequestDto> ConfirmAsync(ConfirmMaterialRequestDto dto, int qcId);
 }
 
+public interface ILeadInventoryService
+{
+    Task<IReadOnlyList<LeadMaterialStockDto>> GetStocksAsync(int leadId);
+    Task<IReadOnlyList<LeadMaterialStockTransactionDto>> GetTransactionsAsync(int leadId);
+    Task<LeadMaterialStockDto> StockInAsync(StockInLeadMaterialDto dto, int leadId);
+    Task<LeadMaterialStockDto> AdjustAsync(AdjustLeadMaterialStockDto dto, int leadId);
+}
+
 public interface ILeadTaskDelegationService
 {
     Task<LeadTaskDelegationDto> CreateAsync(CreateLeadTaskDelegationDto dto, int leadId);

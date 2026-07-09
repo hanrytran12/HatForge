@@ -56,7 +56,8 @@ public record WorkshopPlanItemDto(
 
 public record MaterialItemDto(
     string MaterialName,
-    int PlannedQuantity
+    int PlannedQuantity,
+    string Unit = "m"
 );
 
 public record BatchListDto(

@@ -77,6 +77,8 @@ public class BatchServiceTests
         var service = new BatchService(uow, new NoOpNotificationPublisher());
 
         var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        await TestDataFactory.SeedLeadStockAsync(ctx, 1, "Wool Felt", "m", 500);
+        await TestDataFactory.SeedLeadStockAsync(ctx, 1, "Thread", "m", 100);
 
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
@@ -90,6 +92,39 @@ public class BatchServiceTests
         Assert.Equal(2, result.Workshops.Count);
         Assert.False(result.Workshops[0].RequiresMaterials);
         Assert.True(result.Workshops[1].RequiresMaterials);
+
+        var woolStock = ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Wool Felt");
+        var threadStock = ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Thread");
+        Assert.Equal(0m, woolStock.QuantityOnHand);
+        Assert.Equal(0m, threadStock.QuantityOnHand);
+        Assert.Equal(2, ctx.LeadMaterialStockTransactions.Count());
+        Assert.All(ctx.LeadMaterialStockTransactions, tx =>
+            Assert.Equal(LeadMaterialStockTransactionType.BatchPlanAllocation, tx.Type));
+    }
+
+    [Fact]
+    public async Task PlanBatch_WhenLeadInventoryInsufficient_ThrowsAndDoesNotCreatePlan()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        await TestDataFactory.SeedLeadStockAsync(ctx, 1, "Wool Felt", "m", 400);
+        await TestDataFactory.SeedLeadStockAsync(ctx, 1, "Thread", "m", 100);
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            WithMaterial(3, 0, Start, Start.AddDays(10), Start)
+        });
+
+        await Assert.ThrowsAsync<BusinessRuleException>(
+            () => service.PlanBatchAsync(batch.Id, plan, leadId: 1));
+
+        Assert.Empty(ctx.BatchWorkshops.Where(x => x.BatchId == batch.Id));
+        Assert.Empty(ctx.MaterialDeliveries.Where(x => x.BatchId == batch.Id));
+        Assert.Equal(400m, ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Wool Felt").QuantityOnHand);
+        Assert.Empty(ctx.LeadMaterialStockTransactions);
     }
 
     [Fact]

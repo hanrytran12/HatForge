@@ -115,6 +115,14 @@ Services receive these values as method parameters — they do not access `IHttp
 | `GET /api/material/pending` | QCWorkshop |
 | `PUT /api/material/confirm` | QCWorkshop |
 
+### LeadInventoryController
+| Action | Required Role |
+|---|---|
+| `GET /api/lead-inventory` | Lead |
+| `GET /api/lead-inventory/transactions` | Lead |
+| `POST /api/lead-inventory/stock-in` | Lead |
+| `POST /api/lead-inventory/adjust` | Lead |
+
 ### MaterialRequestController
 | Action | Required Role |
 |---|---|

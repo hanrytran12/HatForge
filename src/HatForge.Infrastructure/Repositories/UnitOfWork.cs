@@ -16,6 +16,8 @@ public class UnitOfWork : IUnitOfWork
     private Repository<MaterialDeliveryItem>? _materialDeliveryItems;
     private Repository<MaterialRequest>? _materialRequests;
     private Repository<MaterialRequestItem>? _materialRequestItems;
+    private Repository<LeadMaterialStock>? _leadMaterialStocks;
+    private Repository<LeadMaterialStockTransaction>? _leadMaterialStockTransactions;
     private Repository<LeadTaskDelegationRequest>? _leadTaskDelegationRequests;
     private Repository<BatchWorkshop>? _batchWorkshops;
     private Repository<Workshop>? _workshops;
@@ -33,6 +35,8 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<MaterialDeliveryItem> MaterialDeliveryItems => _materialDeliveryItems ??= new Repository<MaterialDeliveryItem>(_context);
     public IRepository<MaterialRequest> MaterialRequests => _materialRequests ??= new Repository<MaterialRequest>(_context);
     public IRepository<MaterialRequestItem> MaterialRequestItems => _materialRequestItems ??= new Repository<MaterialRequestItem>(_context);
+    public IRepository<LeadMaterialStock> LeadMaterialStocks => _leadMaterialStocks ??= new Repository<LeadMaterialStock>(_context);
+    public IRepository<LeadMaterialStockTransaction> LeadMaterialStockTransactions => _leadMaterialStockTransactions ??= new Repository<LeadMaterialStockTransaction>(_context);
     public IRepository<LeadTaskDelegationRequest> LeadTaskDelegationRequests => _leadTaskDelegationRequests ??= new Repository<LeadTaskDelegationRequest>(_context);
     public IRepository<BatchWorkshop> BatchWorkshops => _batchWorkshops ??= new Repository<BatchWorkshop>(_context);
     public IRepository<Workshop> Workshops => _workshops ??= new Repository<Workshop>(_context);
@@ -41,6 +45,23 @@ public class UnitOfWork : IUnitOfWork
     public IRepository<Notification> Notifications => _notifications ??= new Repository<Notification>(_context);
 
     public async Task<int> SaveChangesAsync() => await _context.SaveChangesAsync();
+
+    public async Task ExecuteInTransactionAsync(Func<Task> action)
+    {
+        if (_context.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+        {
+            await action();
+            return;
+        }
+
+        var strategy = _context.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            await action();
+            await transaction.CommitAsync();
+        });
+    }
 
     public void Dispose() => _context.Dispose();
 }

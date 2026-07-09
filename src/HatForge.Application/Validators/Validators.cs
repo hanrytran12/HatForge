@@ -66,6 +66,7 @@ public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
                 w.RuleForEach(x => x.MaterialItems).ChildRules(m =>
                 {
                     m.RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(256);
+                    m.RuleFor(x => x.Unit).NotEmpty().MaximumLength(32);
                     m.RuleFor(x => x.PlannedQuantity).GreaterThan(0);
                 });
             });
@@ -196,6 +197,32 @@ public class CreateAdHocMaterialRequestValidator : AbstractValidator<CreateAdHoc
                 .GreaterThan(0)
                 .WithMessage("Requested quantity must be greater than 0");
         });
+    }
+}
+
+public class StockInLeadMaterialValidator : AbstractValidator<StockInLeadMaterialDto>
+{
+    public StockInLeadMaterialValidator()
+    {
+        RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(256);
+        RuleFor(x => x.Unit).NotEmpty().MaximumLength(32);
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0)
+            .WithMessage("Quantity must be greater than 0");
+        RuleFor(x => x.Notes).MaximumLength(500);
+    }
+}
+
+public class AdjustLeadMaterialStockValidator : AbstractValidator<AdjustLeadMaterialStockDto>
+{
+    public AdjustLeadMaterialStockValidator()
+    {
+        RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(256);
+        RuleFor(x => x.Unit).NotEmpty().MaximumLength(32);
+        RuleFor(x => x.NewQuantityOnHand)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("NewQuantityOnHand must be greater than or equal to 0");
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
     }
 }
 

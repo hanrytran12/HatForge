@@ -78,14 +78,19 @@ public class MaterialRequestServiceTests
         ctx.MaterialDeliveryItems.Add(new MaterialDeliveryItem
         {
             MaterialDeliveryId = delivery.Id, MaterialName = "Wool Felt",
+            Unit = "m",
             PlannedQuantity = planned1
         });
         ctx.MaterialDeliveryItems.Add(new MaterialDeliveryItem
         {
             MaterialDeliveryId = delivery.Id, MaterialName = "Thread",
+            Unit = "m",
             PlannedQuantity = planned2
         });
         await ctx.SaveChangesAsync();
+
+        await TestDataFactory.SeedLeadStockAsync(ctx, LeadId, "Wool Felt", "m", planned1 + 1000);
+        await TestDataFactory.SeedLeadStockAsync(ctx, LeadId, "Thread", "m", planned2 + 1000);
 
         var items = await new UnitOfWork(ctx).MaterialDeliveryItems
             .FindAsync(x => x.MaterialDeliveryId == delivery.Id);
@@ -231,19 +236,16 @@ public class MaterialRequestServiceTests
     }
 
     [Fact]
-    public async Task ConfirmDelivery_Oversupply_DoesNotCreateRequest()
+    public async Task ConfirmDelivery_Oversupply_ThrowsBusinessRule()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
         var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx, planned1: 500, planned2: 100);
 
         var service = CreateDeliveryService(ctx);
-        await service.ConfirmDeliveryAsync(
-            BuildConfirm(deliveryId, item1, 600, item2, 150), QcId);
-
-        var mrService = CreateService(ctx);
-        var requests = await mrService.GetByBatchAsync(batchId);
-        Assert.Empty(requests);
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.ConfirmDeliveryAsync(
+                BuildConfirm(deliveryId, item1, 600, item2, 150), QcId));
     }
 
     [Fact]
@@ -305,6 +307,40 @@ public class MaterialRequestServiceTests
         Assert.Equal(nameof(MaterialRequestStatus.Approved), approved.Status);
         Assert.Equal(LeadId, approved.ApprovedByLeadId);
         Assert.NotNull(approved.ApprovedAt);
+
+        var woolStock = ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Wool Felt");
+        Assert.Equal(1400m, woolStock.QuantityOnHand);
+        var tx = Assert.Single(ctx.LeadMaterialStockTransactions);
+        Assert.Equal(LeadMaterialStockTransactionType.MaterialRequestAllocation, tx.Type);
+        Assert.Equal(-100m, tx.QuantityDelta);
+        Assert.Equal(approved.Id, tx.MaterialRequestId);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_WhenLeadInventoryInsufficient_ThrowsAndLeavesRequestPending()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var (batchId, deliveryId, item1, item2) = await SeedShortDeliveryAsync(ctx);
+
+        await CreateDeliveryService(ctx).ConfirmDeliveryAsync(
+            BuildConfirm(deliveryId, item1, 400, item2, 100), QcId);
+
+        var stock = ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Wool Felt");
+        stock.QuantityOnHand = 50m;
+        ctx.LeadMaterialStocks.Update(stock);
+        await ctx.SaveChangesAsync();
+
+        var mrService = CreateService(ctx);
+        var pending = (await mrService.GetByBatchAsync(batchId)).Single();
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            mrService.ApproveAsync(pending.Id, LeadId));
+
+        var reloaded = (await mrService.GetByBatchAsync(batchId)).Single();
+        Assert.Equal(nameof(MaterialRequestStatus.Pending), reloaded.Status);
+        Assert.Equal(50m, ctx.LeadMaterialStocks.Single(x => x.MaterialName == "Wool Felt").QuantityOnHand);
+        Assert.Empty(ctx.LeadMaterialStockTransactions);
     }
 
     [Fact]
@@ -651,6 +687,7 @@ public class MaterialRequestServiceTests
             StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(10)
         });
         await ctx.SaveChangesAsync();
+        await TestDataFactory.SeedLeadStockAsync(ctx, leadId, "Wool Felt", "m", 1000);
         return batch.Id;
     }
     private static CreateAdHocMaterialRequestDto BuildAdHoc(

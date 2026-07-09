@@ -136,59 +136,87 @@ public class BatchService : IBatchService
             }
         }
 
-        var existingBws = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == batchId);
-        foreach (var bw in existingBws)
-            _unitOfWork.BatchWorkshops.Remove(bw);
-
         // Normalize orderIndex to 0-based sequential regardless of what client sent
         var orderedWorkshops = dto.Workshops.OrderBy(x => x.OrderIndex).ToList();
-        foreach (var (item, index) in orderedWorkshops.Select((w, i) => (w, i)))
+
+        var requiredMaterials = orderedWorkshops
+            .Where(w => w.RequiresMaterials && w.MaterialItems != null)
+            .SelectMany(w => w.MaterialItems!.Select(m => new PlannedMaterialRequirement(
+                m.MaterialName,
+                m.Unit,
+                m.PlannedQuantity)))
+            .ToList();
+        await EnsureLeadInventoryAvailableAsync(leadId, requiredMaterials);
+
+        await _unitOfWork.ExecuteInTransactionAsync(async () =>
         {
-            var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
-                ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
-            var requiresMaterials = workshop.RequiresMaterials;
+            var existingBws = await _unitOfWork.BatchWorkshops.FindAsync(x => x.BatchId == batchId);
+            foreach (var bw in existingBws)
+                _unitOfWork.BatchWorkshops.Remove(bw);
 
-            var bw = new BatchWorkshop
+            foreach (var (item, index) in orderedWorkshops.Select((w, i) => (w, i)))
             {
-                BatchId = batchId,
-                WorkshopId = item.WorkshopId,
-                OrderIndex = index,  // always 0-based sequential
-                RequiresMaterials = requiresMaterials,
-                MaterialsReceived = false,
-                IsCompleted = false,
-                StartDate = item.StartDate,
-                EndDate = item.EndDate,
-                EstimatedMetersPerUnit = requiresMaterials ? item.EstimatedMetersPerUnit : 0m
-            };
-            await _unitOfWork.BatchWorkshops.AddAsync(bw);
+                var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
+                    ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
+                var requiresMaterials = workshop.RequiresMaterials;
 
-            if (requiresMaterials && item.MaterialDeliveryDate.HasValue)
-            {
-                var delivery = new MaterialDelivery
+                var bw = new BatchWorkshop
                 {
                     BatchId = batchId,
                     WorkshopId = item.WorkshopId,
-                    ScheduledDate = item.MaterialDeliveryDate.Value,
-                    Status = MaterialDeliveryStatus.Scheduled
+                    OrderIndex = index,  // always 0-based sequential
+                    RequiresMaterials = requiresMaterials,
+                    MaterialsReceived = false,
+                    IsCompleted = false,
+                    StartDate = item.StartDate,
+                    EndDate = item.EndDate,
+                    EstimatedMetersPerUnit = requiresMaterials ? item.EstimatedMetersPerUnit : 0m
                 };
-                await _unitOfWork.MaterialDeliveries.AddAsync(delivery);
-                await _unitOfWork.SaveChangesAsync(); // get delivery.Id
+                await _unitOfWork.BatchWorkshops.AddAsync(bw);
 
-                foreach (var mat in item.MaterialItems!)
+                if (requiresMaterials && item.MaterialDeliveryDate.HasValue)
                 {
-                    await _unitOfWork.MaterialDeliveryItems.AddAsync(new MaterialDeliveryItem
+                    var delivery = new MaterialDelivery
                     {
-                        MaterialDeliveryId = delivery.Id,
-                        MaterialName = mat.MaterialName,
-                        PlannedQuantity = mat.PlannedQuantity
-                    });
+                        BatchId = batchId,
+                        WorkshopId = item.WorkshopId,
+                        ScheduledDate = item.MaterialDeliveryDate.Value,
+                        Status = MaterialDeliveryStatus.Scheduled
+                    };
+                    await _unitOfWork.MaterialDeliveries.AddAsync(delivery);
+                    await _unitOfWork.SaveChangesAsync(); // get delivery.Id for item FKs and stock ledger
+
+                    foreach (var mat in item.MaterialItems!)
+                    {
+                        var materialName = LeadInventoryService.CleanMaterialName(mat.MaterialName);
+                        var unit = LeadInventoryService.NormalizeUnit(mat.Unit);
+                        await _unitOfWork.MaterialDeliveryItems.AddAsync(new MaterialDeliveryItem
+                        {
+                            MaterialDeliveryId = delivery.Id,
+                            MaterialName = materialName,
+                            Unit = unit,
+                            PlannedQuantity = mat.PlannedQuantity
+                        });
+
+                        await DeductLeadInventoryAsync(
+                            leadId,
+                            materialName,
+                            unit,
+                            mat.PlannedQuantity,
+                            LeadMaterialStockTransactionType.BatchPlanAllocation,
+                            createdByUserId: leadId,
+                            batchId: batchId,
+                            materialDeliveryId: delivery.Id,
+                            materialRequestId: null,
+                            notes: $"Allocated to workshop {item.WorkshopId} during batch planning");
+                    }
                 }
             }
-        }
 
-        batch.Status = BatchStatus.InProduction;
-        _unitOfWork.Batches.Update(batch);
-        await _unitOfWork.SaveChangesAsync();
+            batch.Status = BatchStatus.InProduction;
+            _unitOfWork.Batches.Update(batch);
+            await _unitOfWork.SaveChangesAsync();
+        });
 
         // Notify QC of each assigned workshop
         foreach (var item in orderedWorkshops)
@@ -499,6 +527,92 @@ public class BatchService : IBatchService
         return batchNumber;
     }
 
+    private async Task EnsureLeadInventoryAvailableAsync(
+        int leadId,
+        IReadOnlyList<PlannedMaterialRequirement> requirements)
+    {
+        var totals = requirements
+            .GroupBy(x => new
+            {
+                NormalizedMaterialName = LeadInventoryService.NormalizeMaterialName(x.MaterialName),
+                Unit = LeadInventoryService.NormalizeUnit(x.Unit)
+            })
+            .Select(g => new
+            {
+                MaterialName = LeadInventoryService.CleanMaterialName(g.First().MaterialName),
+                g.Key.NormalizedMaterialName,
+                g.Key.Unit,
+                RequiredQuantity = g.Sum(x => x.Quantity)
+            })
+            .ToList();
+
+        foreach (var total in totals)
+        {
+            var stock = await _unitOfWork.LeadMaterialStocks.FirstOrDefaultAsync(x =>
+                x.LeadId == leadId
+                && x.NormalizedMaterialName == total.NormalizedMaterialName
+                && x.Unit == total.Unit);
+
+            if (stock == null)
+                throw new BusinessRuleException(
+                    $"Material {total.MaterialName} ({total.Unit}) is not available in the lead inventory");
+
+            if (stock.QuantityOnHand < total.RequiredQuantity)
+                throw new BusinessRuleException(
+                    $"Insufficient stock for {stock.MaterialName} ({stock.Unit}): required {total.RequiredQuantity}, available {stock.QuantityOnHand}");
+        }
+    }
+
+    private async Task DeductLeadInventoryAsync(
+        int leadId,
+        string materialName,
+        string unit,
+        decimal quantity,
+        LeadMaterialStockTransactionType type,
+        int createdByUserId,
+        int? batchId,
+        int? materialDeliveryId,
+        int? materialRequestId,
+        string? notes)
+    {
+        if (quantity <= 0)
+            throw new BusinessRuleException("Allocated material quantity must be greater than 0");
+
+        var normalizedMaterialName = LeadInventoryService.NormalizeMaterialName(materialName);
+        var normalizedUnit = LeadInventoryService.NormalizeUnit(unit);
+        var stock = await _unitOfWork.LeadMaterialStocks.FirstOrDefaultAsync(x =>
+            x.LeadId == leadId
+            && x.NormalizedMaterialName == normalizedMaterialName
+            && x.Unit == normalizedUnit)
+            ?? throw new BusinessRuleException(
+                $"Material {materialName} ({normalizedUnit}) is not available in the lead inventory");
+
+        if (stock.QuantityOnHand < quantity)
+            throw new BusinessRuleException(
+                $"Insufficient stock for {stock.MaterialName} ({stock.Unit}): required {quantity}, available {stock.QuantityOnHand}");
+
+        stock.QuantityOnHand -= quantity;
+        stock.UpdatedAt = DateTime.UtcNow;
+        _unitOfWork.LeadMaterialStocks.Update(stock);
+
+        await _unitOfWork.LeadMaterialStockTransactions.AddAsync(new LeadMaterialStockTransaction
+        {
+            LeadMaterialStockId = stock.Id,
+            LeadId = leadId,
+            MaterialName = stock.MaterialName,
+            NormalizedMaterialName = stock.NormalizedMaterialName,
+            Unit = stock.Unit,
+            QuantityDelta = -quantity,
+            QuantityAfter = stock.QuantityOnHand,
+            Type = type,
+            BatchId = batchId,
+            MaterialDeliveryId = materialDeliveryId,
+            MaterialRequestId = materialRequestId,
+            CreatedByUserId = createdByUserId,
+            Notes = notes
+        });
+    }
+
     private static int CalculateRepairableRemaining(IEnumerable<Work> works)
     {
         var remaining = 0;
@@ -516,4 +630,6 @@ public class BatchService : IBatchService
 
         return remaining;
     }
+
+    private sealed record PlannedMaterialRequirement(string MaterialName, string Unit, decimal Quantity);
 }
