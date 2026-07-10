@@ -5,7 +5,7 @@
 ```
 Created (0)
   └─► Assigned (1)            [Admin creates batch, assigns Lead]
-        └─► InProduction (2)   [Lead plans workshop chain]
+        ├─► InProduction (2)   [Lead plans workshop chain]
               ├─► UnderQCReview (3)   [Staff submits work]
               │     └─► ReadyForTransfer (4)   [QC approves work]
               │           ├─► InProduction (2)   [QC confirms receipt at next workshop — mid-chain]
@@ -16,6 +16,7 @@ Created (0)
                                           remaining workshop]
                     └─► PendingGateQC (7)   [Lead approves final]
                           └─► Completed (5) [QC Gate confirms]
+        └─► Cancelled (8)      [Admin cancels before Lead planning]
 ```
 
 Status transitions are enforced inside service methods via `BusinessRuleException` — not via EF constraints.
@@ -41,7 +42,9 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Effect:**
 - Validates: ≥1 workshop, no duplicate `WorkshopId`, no duplicate `OrderIndex`, every workshop exists
 - Per workshop: dates must be inside `[batch.StartDate, batch.EndDate]`, `EndDate > StartDate`
-- For workshops that `RequiresMaterials = true`: `MaterialDeliveryDate` required (must be in `[batch.StartDate, workshop.StartDate]`), at least one `MaterialItems` entry, each item has `MaterialName`, `Unit`, and `PlannedQuantity > 0`, `EstimatedMetersPerUnit > 0`
+- `RequiresMaterials` comes from each Lead plan item and is persisted to `BatchWorkshop.RequiresMaterials`; master `Workshop.RequiresMaterials` is legacy/default metadata only and does not block the request
+- For plan items with `RequiresMaterials = true`: `MaterialDeliveryDate` required (must be in `[batch.StartDate, workshop.StartDate]`), at least one `MaterialItems` entry, each item has `MaterialName`, `Unit`, and `PlannedQuantity > 0`, `EstimatedMetersPerUnit > 0`
+- For plan items with `RequiresMaterials = false`: `MaterialDeliveryDate` must be null, `MaterialItems` must be omitted/empty, and `EstimatedMetersPerUnit` must be `0`
 - Aggregates planned material items by normalized `MaterialName + Unit`, validates the assigned Lead's central inventory, and rejects the plan if any stock is missing or insufficient
 - Wipes any prior `BatchWorkshop` rows for this batch (planning is fully replaceable while in `Assigned`)
 - Normalizes `OrderIndex` to 0-based sequential in server-sorted order
@@ -62,10 +65,10 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 - Sets `BatchWorkshop.MaterialsReceived = true` and `InitialMaterialQty = SUM(ActualQuantity)`
 - Sets `MaterialDelivery.Status = Received`
 - Notification: Staff in workshop (`MaterialDeliveryConfirmed`)
-- If the workshop is **first in the chain** and any item was short, auto-creates a `MaterialRequest` (`Pending`, Round 1) for the lead and notifies them (`MaterialShortfall`). The batch flow is **not** blocked by a shortfall — the workshop is unblocked as soon as the original delivery is confirmed.
+- If this batch workshop has `BatchWorkshop.RequiresMaterials = true` and any item was short, auto-creates a `MaterialRequest` (`Pending`, Round 1) for the lead and notifies them (`MaterialShortfall`). The batch flow is **not** blocked by a shortfall — the workshop is unblocked as soon as the original delivery is confirmed.
 - If this delivery has an active QCTransport delegation (`PendingAdminApproval` or `Approved`), QCWorkshop cannot confirm receipt until QCTransport marks it `Delivered`.
 
-**Constraint:** If `Workshop.RequiresMaterials = true`, Staff cannot submit work until `BatchWorkshop.MaterialsReceived = true`.
+**Constraint:** If `BatchWorkshop.RequiresMaterials = true`, Staff cannot submit work until `BatchWorkshop.MaterialsReceived = true`.
 
 ---
 
@@ -73,22 +76,22 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Actor:** Staff (must belong to `dto.WorkshopId`)
 **Endpoint:** `POST /api/work` (multipart/form-data, includes photo files; at least one photo required)
 **Effect:**
-- Estimates material usage: `estimatedUsage = quantity * BatchWorkshop.EstimatedMetersPerUnit` (0 if workshop doesn't require materials)
-- Pre-charges `BatchWorkshop.MaterialUsed += estimatedUsage` so the budget is reserved up front
-- Creates `Work` (status `Submitted`, `IsRework` from DTO, `EstimatedMaterialUsed` saved)
+- Estimates baseline material usage: `estimatedUsage = quantity * BatchWorkshop.EstimatedMetersPerUnit` (0 if workshop doesn't require materials)
+- For material-requiring batch workshops, Staff must submit `reportedMaterialUsed > 0`; this reserves workshop stock with `BatchWorkshop.MaterialUsed += reportedMaterialUsed`
+- Creates `Work` (status `Submitted`, `IsRework` from DTO, `EstimatedMaterialUsed` and `ReportedMaterialUsed` saved)
 - Uploads photos to Cloudinary and creates `WorkPhoto` rows with `Type = Submission`
 - Status → `UnderQCReview`
 - Notification: workshop's QC staff (`WorkSubmitted`)
 
 **Guards (throws `BusinessRuleException` if violated):**
-- Batch must not be `Assigned` (planned) or `Completed`
+- Batch must be active for production; `Created`, `Assigned`, `Completed`, `PendingLeadReview`, `PendingGateQC`, and `Cancelled` reject work submission
 - Staff must belong to the workshop they're submitting for
-- If `Workshop.RequiresMaterials`: `BatchWorkshop.MaterialsReceived` must be `true`
-- If `Workshop.RequiresMaterials` and there is no material remaining: blocks submit
-- If `Workshop.RequiresMaterials` and `quantity * estimatedMetersPerUnit > remaining`: blocks submit with a rounded-meters error message
+- If `BatchWorkshop.RequiresMaterials`: `BatchWorkshop.MaterialsReceived` must be `true`
+- If `BatchWorkshop.RequiresMaterials`: `reportedMaterialUsed` is required, must be `> 0`, and cannot exceed remaining workshop stock
+- If `BatchWorkshop.RequiresMaterials = false`: `reportedMaterialUsed` must be omitted or `0`
 - For workshops after the first: a `TransferRequest` with status `Transferred` from the previous workshop must exist
 - For non-rework submissions after the first workshop: `quantity` (plus previously-submitted non-rework quantity) cannot exceed the previous transfer's `ReceivedUsableQuantity` (capped; falls back to the source's `Work.PassedQuantity` if `ReceivedUsableQuantity` is null)
-- Rework submissions don't consume the received-usable budget; quantity is capped by the remaining `RepairableQuantity` from prior rejections
+- Rework submissions don't consume the received-usable item budget; quantity is capped by the remaining `RepairableQuantity` from prior rejections, but material usage is still reported/reserved when the batch workshop requires materials
 - No existing pending (`Submitted`) Work for this batch+workshop
 
 ---
@@ -99,7 +102,7 @@ Status transitions are enforced inside service methods via `BusinessRuleExceptio
 **Effect on approve:**
 - Sets `Work.Status = Approved`, reviewer and timestamp
 - Sets `PassedQuantity = Quantity`, `RepairableQuantity = 0`, `UnrepairableQuantity = 0`
-- Reconciles `BatchWorkshop.MaterialUsed`: replaces the pre-charged estimate with `ActualMaterialUsed`
+- Reconciles `BatchWorkshop.MaterialUsed`: releases the Staff-reported reserve and applies `ActualMaterialUsed`
 - Notification: Staff (`WorkApproved`, persisted), batch group + leads (`WorkApproved`, push only)
 - If material remaining ≤ 5m after reconciliation: `MaterialLowAlert` to workshop's QC users
 
@@ -233,7 +236,14 @@ Guards:
 - Marks the specific `BatchWorkshop.IsCompleted = true`
 - If all workshops in the chain are completed, sets `Batch.Status = PendingLeadReview` (Lead notified)
 - If some are still incomplete, sets `Batch.Status = ReadyForTransfer`
-- Rejects if the batch is still in `Assigned`
+- Rejects if the batch is still in `Assigned`, already `Completed`, or `Cancelled`
+
+### Cancel Batch
+`PUT /api/batch/{id}/cancel` — Role: `Admin`
+- Sets `Batch.Status = Cancelled`
+- Allowed only while the batch is still `Assigned`
+- Rejects after Lead planning succeeds (`InProduction` or later)
+- Does not restore inventory because inventory is not deducted until successful planning
 
 ### Final Summary
 `GET /api/batch/{id}/final-summary` — Role: `Lead` or `QCGate`
@@ -255,19 +265,20 @@ Guards:
 
 These are off the main batch state machine but interact with `BatchWorkshop.MaterialUsed` and `InitialMaterialQty`.
 
-### Shortfall request (auto, first-workshop only)
+### Shortfall request (auto, for any planned material workshop)
 1. `MaterialDeliveryService.ConfirmDeliveryAsync` records actuals
-2. If the workshop is `OrderIndex == 0` and any item was short, `MaterialRequestService.CreateRequestFromShortfallAsync` creates a `MaterialRequest` (`Pending`, `Round = previous + 1`)
+2. If the workshop is in the batch chain with `BatchWorkshop.RequiresMaterials = true` and any item was short, `MaterialRequestService.CreateRequestFromShortfallAsync` creates a `MaterialRequest` (`Pending`, `Round = previous + 1`)
 3. Lead approves → validates Lead inventory, deducts requested quantities, records `MaterialRequestAllocation`, then sets request → `Approved`
 4. Same workshop's QC confirms → `Fulfilled`; `BatchWorkshop.InitialMaterialQty += total delivered`
 5. If the confirmation is still short, a new round is auto-spawned (subject to `MaxSupplementalRounds = 3`)
 
-### Ad-hoc request (QC-initiated, first-workshop only)
+### Ad-hoc request (QC-initiated, for any planned material workshop)
 1. `POST /api/material-request/ad-hoc` creates a `MaterialRequest { IsAdHoc = true, OriginalDeliveryId = null, Round = 1, Reason }`
-2. Allowed batch statuses: `InProduction`, `UnderQCReview`, `ReadyForTransfer`, `PendingLeadReview`
-3. Blocked if a prior `IsAdHoc` request is still `Pending` or `Approved` for the same workshop
-4. Lead approves → inventory deduction happens exactly like shortfall requests, then QC confirms
-5. A `Confirmed` ad-hoc request unblocks a new one
+2. Allowed only when the caller is QC for a workshop in the batch chain with `BatchWorkshop.RequiresMaterials = true`
+3. Allowed batch statuses: `InProduction`, `UnderQCReview`, `ReadyForTransfer`, `PendingLeadReview`
+4. Blocked if a prior `IsAdHoc` request is still `Pending` or `Approved` for the same workshop
+5. Lead approves → inventory deduction happens exactly like shortfall requests, then QC confirms
+6. A `Confirmed` ad-hoc request unblocks a new one
 
 ### Lead inventory semantics
 - `POST /api/lead-inventory/stock-in` is normal receiving: it adds to an existing stock row when `MaterialName + Unit` already exists, otherwise creates a new row.

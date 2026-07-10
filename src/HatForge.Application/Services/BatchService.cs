@@ -98,14 +98,10 @@ public class BatchService : IBatchService
         // Validate all workshops exist
         foreach (var item in dto.Workshops)
         {
-            var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
+            _ = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
                 ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
 
-            if (item.RequiresMaterials != workshop.RequiresMaterials)
-                throw new BusinessRuleException(
-                    $"Workshop {item.WorkshopId}: material requirement must match workshop configuration");
-
-            var requiresMaterials = workshop.RequiresMaterials;
+            var requiresMaterials = item.RequiresMaterials;
 
             if (requiresMaterials && item.MaterialDeliveryDate == null)
                 throw new BusinessRuleException(
@@ -118,6 +114,18 @@ public class BatchService : IBatchService
             if (requiresMaterials && item.EstimatedMetersPerUnit <= 0)
                 throw new BusinessRuleException(
                     $"Workshop {item.WorkshopId} requires materials — EstimatedMetersPerUnit must be greater than 0");
+
+            if (!requiresMaterials && item.MaterialDeliveryDate != null)
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId} does not require materials — MaterialDeliveryDate must be omitted");
+
+            if (!requiresMaterials && item.MaterialItems is { Count: > 0 })
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId} does not require materials — MaterialItems must be omitted");
+
+            if (!requiresMaterials && item.EstimatedMetersPerUnit != 0)
+                throw new BusinessRuleException(
+                    $"Workshop {item.WorkshopId} does not require materials — EstimatedMetersPerUnit must be 0");
 
             if (item.EndDate.Date <= item.StartDate.Date)
                 throw new BusinessRuleException(
@@ -156,9 +164,9 @@ public class BatchService : IBatchService
 
             foreach (var (item, index) in orderedWorkshops.Select((w, i) => (w, i)))
             {
-                var workshop = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
+                _ = await _unitOfWork.Workshops.GetByIdAsync(item.WorkshopId)
                     ?? throw new NotFoundException($"Workshop {item.WorkshopId} not found");
-                var requiresMaterials = workshop.RequiresMaterials;
+                var requiresMaterials = item.RequiresMaterials;
 
                 var bw = new BatchWorkshop
                 {
@@ -235,6 +243,21 @@ public class BatchService : IBatchService
         return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
     }
 
+    public async Task<BatchDto> CancelBatchAsync(int batchId)
+    {
+        var batch = await _unitOfWork.Batches.GetByIdAsync(batchId)
+            ?? throw new NotFoundException("Batch not found");
+
+        if (batch.Status != BatchStatus.Assigned)
+            throw new BusinessRuleException("Batch can only be cancelled before it is planned");
+
+        batch.Status = BatchStatus.Cancelled;
+        _unitOfWork.Batches.Update(batch);
+        await _unitOfWork.SaveChangesAsync();
+
+        return await GetBatchByIdAsync(batchId) ?? throw new NotFoundException("Batch not found");
+    }
+
     public async Task<BatchDto?> GetBatchByIdAsync(int id)
     {
         var batch = await _unitOfWork.Batches.FirstOrDefaultAsync(
@@ -294,7 +317,7 @@ public class BatchService : IBatchService
         if (batch.Status == BatchStatus.Assigned)
             throw new BusinessRuleException("Batch has not been planned yet. Lead must plan workshops first");
 
-        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingGateQC)
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingGateQC or BatchStatus.Cancelled)
             throw new BusinessRuleException("Batch cannot accept workshop completion changes in its current status");
 
         var works = await _unitOfWork.Works.FindAsync(

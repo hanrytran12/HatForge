@@ -8,6 +8,7 @@ public interface IBatchService
 {
     Task<BatchDto> CreateBatchAsync(CreateBatchDto dto);
     Task<BatchDto> PlanBatchAsync(int batchId, PlanBatchDto dto, int leadId);
+    Task<BatchDto> CancelBatchAsync(int batchId);
     Task<BatchDto?> GetBatchByIdAsync(int id);
     Task<IReadOnlyList<BatchListDto>> GetAllBatchesAsync();
     Task<IReadOnlyList<BatchListDto>> GetBatchesByLeadAsync(int leadId);

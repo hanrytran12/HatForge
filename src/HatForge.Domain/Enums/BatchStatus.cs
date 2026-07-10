@@ -9,5 +9,6 @@ public enum BatchStatus
     ReadyForTransfer = 4,
     PendingLeadReview = 6,   
     PendingGateQC = 7,       
-    Completed = 5
+    Completed = 5,
+    Cancelled = 8
 }

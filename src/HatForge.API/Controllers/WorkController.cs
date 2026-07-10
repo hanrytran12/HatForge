@@ -27,6 +27,7 @@ public class WorkController : BaseApiController
         [FromForm] int workshopId,
         [FromForm] int quantity,
         [FromForm] bool isRework,
+        [FromForm] decimal? reportedMaterialUsed,
         IFormFileCollection photos)
     {
         if (batchId <= 0)
@@ -38,6 +39,9 @@ public class WorkController : BaseApiController
         if (quantity <= 0)
             return BadRequest(ApiResponse<WorkDto>.Fail("Quantity must be greater than 0"));
 
+        if (reportedMaterialUsed.HasValue && reportedMaterialUsed.Value < 0)
+            return BadRequest(ApiResponse<WorkDto>.Fail("ReportedMaterialUsed must be greater than or equal to 0"));
+
         if (photos == null || photos.Count == 0)
             return BadRequest(ApiResponse<WorkDto>.Fail("At least one photo is required"));
 
@@ -48,7 +52,7 @@ public class WorkController : BaseApiController
             photoUrls.Add(await _fileStorage.SaveAsync(stream, photo.FileName, photo.ContentType));
         }
 
-        var dto = new SubmitWorkDto(batchId, workshopId, quantity, isRework, photoUrls);
+        var dto = new SubmitWorkDto(batchId, workshopId, quantity, isRework, photoUrls, reportedMaterialUsed);
         return Success(await _workService.SubmitWorkAsync(dto, CurrentUserId));
     }
 

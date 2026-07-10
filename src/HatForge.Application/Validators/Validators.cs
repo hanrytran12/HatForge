@@ -70,6 +70,18 @@ public class PlanBatchValidator : AbstractValidator<PlanBatchDto>
                     m.RuleFor(x => x.PlannedQuantity).GreaterThan(0);
                 });
             });
+
+            w.When(x => !x.RequiresMaterials, () =>
+            {
+                w.RuleFor(x => x.MaterialDeliveryDate)
+                    .Null().WithMessage("MaterialDeliveryDate must be omitted when workshop does not require materials");
+                w.RuleFor(x => x.MaterialItems)
+                    .Must(x => x == null || x.Count == 0)
+                    .WithMessage("MaterialItems must be omitted when workshop does not require materials");
+                w.RuleFor(x => x.EstimatedMetersPerUnit)
+                    .Equal(0)
+                    .WithMessage("EstimatedMetersPerUnit must be 0 when workshop does not require materials");
+            });
         });
     }
 }
@@ -83,6 +95,10 @@ public class SubmitWorkValidator : AbstractValidator<SubmitWorkDto>
         RuleFor(x => x.Quantity).GreaterThan(0).WithMessage("Quantity must be greater than 0");
         RuleFor(x => x.PhotoUrls).NotEmpty().WithMessage("At least one photo is required");
         RuleForEach(x => x.PhotoUrls).NotEmpty().MaximumLength(512);
+        RuleFor(x => x.ReportedMaterialUsed)
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.ReportedMaterialUsed.HasValue)
+            .WithMessage("ReportedMaterialUsed must be greater than or equal to 0");
     }
 }
 

@@ -20,6 +20,7 @@ public class Work
     public int? ReviewedByQCId { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public decimal? ActualMaterialUsed { get; set; }
+    public decimal? ReportedMaterialUsed { get; set; }
     public decimal? EstimatedMaterialUsed { get; set; }
 
     public Batch Batch { get; set; } = null!;

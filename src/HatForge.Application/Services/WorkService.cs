@@ -41,7 +41,7 @@ public class WorkService : IWorkService
         if (batch.Status == BatchStatus.Assigned)
             throw new BusinessRuleException("Batch has not been planned yet");
 
-        if (batch.Status is BatchStatus.Created or BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+        if (batch.Status is BatchStatus.Created or BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC or BatchStatus.Cancelled)
             throw new BusinessRuleException("Batch is not accepting work submissions");
 
         var staff = await _unitOfWork.Users.GetByIdAsync(staffId)
@@ -66,18 +66,34 @@ public class WorkService : IWorkService
         if (workshopBw.RequiresMaterials && !workshopBw.MaterialsReceived)
             throw new BusinessRuleException("Workshop has not received materials yet");
 
-        // Guard: cannot submit if no material remaining
-        if (workshopBw.RequiresMaterials && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed <= 0)
-            throw new BusinessRuleException("Không có đủ nguyên vật liệu để làm việc");
-
         var estimatedUsage = workshopBw.RequiresMaterials
             ? dto.Quantity * workshopBw.EstimatedMetersPerUnit
             : 0m;
 
-        if (workshopBw.RequiresMaterials
-            && workshopBw.InitialMaterialQty - workshopBw.MaterialUsed < estimatedUsage)
-            throw new BusinessRuleException(
-                $"Không đủ nguyên vật liệu. Cần {Math.Round(estimatedUsage, 0, MidpointRounding.AwayFromZero)}m nhưng chỉ còn {Math.Round(workshopBw.InitialMaterialQty - workshopBw.MaterialUsed, 0, MidpointRounding.AwayFromZero)}m");
+        var reportedUsage = dto.ReportedMaterialUsed ?? 0m;
+        if (reportedUsage < 0)
+            throw new BusinessRuleException("ReportedMaterialUsed must be greater than or equal to 0");
+
+        if (workshopBw.RequiresMaterials)
+        {
+            if (!dto.ReportedMaterialUsed.HasValue)
+                throw new BusinessRuleException("ReportedMaterialUsed is required when workshop requires materials");
+
+            if (reportedUsage <= 0)
+                throw new BusinessRuleException("ReportedMaterialUsed must be greater than 0 when workshop requires materials");
+
+            var remainingMaterial = workshopBw.InitialMaterialQty - workshopBw.MaterialUsed;
+            if (remainingMaterial <= 0)
+                throw new BusinessRuleException("Không có đủ nguyên vật liệu để làm việc");
+
+            if (reportedUsage > remainingMaterial)
+                throw new BusinessRuleException(
+                    $"Không đủ nguyên vật liệu. Cần {Math.Round(reportedUsage, 0, MidpointRounding.AwayFromZero)}m nhưng chỉ còn {Math.Round(remainingMaterial, 0, MidpointRounding.AwayFromZero)}m");
+        }
+        else if (reportedUsage > 0)
+        {
+            throw new BusinessRuleException("ReportedMaterialUsed must be 0 when workshop does not require materials");
+        }
 
         // Workshops after the first in the chain must wait for a transfer from the previous workshop
         if (workshopBw.OrderIndex > 0)
@@ -139,6 +155,7 @@ public class WorkService : IWorkService
             Quantity = dto.Quantity,
             IsRework = dto.IsRework,
             Status = WorkStatus.Submitted,
+            ReportedMaterialUsed = workshopBw.RequiresMaterials ? reportedUsage : 0m,
             EstimatedMaterialUsed = estimatedUsage
         };
 
@@ -147,9 +164,9 @@ public class WorkService : IWorkService
         batch.Status = BatchStatus.UnderQCReview;
         _unitOfWork.Batches.Update(batch);
 
-        if (workshopBw.RequiresMaterials && estimatedUsage > 0)
+        if (workshopBw.RequiresMaterials && reportedUsage > 0)
         {
-            workshopBw.MaterialUsed += estimatedUsage;
+            workshopBw.MaterialUsed += reportedUsage;
             _unitOfWork.BatchWorkshops.Update(workshopBw);
         }
 
@@ -192,7 +209,7 @@ public class WorkService : IWorkService
         var batch = await _unitOfWork.Batches.GetByIdAsync(work.BatchId)
             ?? throw new NotFoundException("Batch not found");
 
-        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC or BatchStatus.Cancelled)
             throw new BusinessRuleException("Batch is not accepting QC reviews");
 
         if (work.Status != WorkStatus.Submitted)
@@ -252,7 +269,7 @@ public class WorkService : IWorkService
         var batch = await _unitOfWork.Batches.GetByIdAsync(work.BatchId)
             ?? throw new NotFoundException("Batch not found");
 
-        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC)
+        if (batch.Status is BatchStatus.Completed or BatchStatus.PendingLeadReview or BatchStatus.PendingGateQC or BatchStatus.Cancelled)
             throw new BusinessRuleException("Batch is not accepting QC reviews");
 
         if (work.Status != WorkStatus.Submitted)
@@ -371,8 +388,13 @@ public class WorkService : IWorkService
         if (bw == null || !bw.RequiresMaterials)
             return null;
 
-        var estimate = work.EstimatedMaterialUsed ?? 0m;
-        bw.MaterialUsed = bw.MaterialUsed - estimate + actualMaterialUsed;
+        var reservedUsage = work.ReportedMaterialUsed ?? work.EstimatedMaterialUsed ?? 0m;
+        var availableAfterRelease = bw.InitialMaterialQty - bw.MaterialUsed + reservedUsage;
+        if (actualMaterialUsed > availableAfterRelease)
+            throw new BusinessRuleException(
+                $"Không đủ nguyên vật liệu để chốt thực tế. Cần {Math.Round(actualMaterialUsed, 0, MidpointRounding.AwayFromZero)}m nhưng chỉ còn {Math.Round(availableAfterRelease, 0, MidpointRounding.AwayFromZero)}m");
+
+        bw.MaterialUsed = bw.MaterialUsed - reservedUsage + actualMaterialUsed;
         if (bw.MaterialUsed < 0) bw.MaterialUsed = 0;
 
         _unitOfWork.BatchWorkshops.Update(bw);
@@ -447,6 +469,7 @@ public class WorkService : IWorkService
         w.UnrepairableQuantity,
         w.ReviewedByQCId, w.ReviewedAt,
         w.ActualMaterialUsed,
+        w.ReportedMaterialUsed,
         w.EstimatedMaterialUsed
     );
 }

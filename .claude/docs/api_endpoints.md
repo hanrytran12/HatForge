@@ -109,7 +109,12 @@ Deletes a hat model only when no batch references it.
 ```
 **Response `data`:** `BatchDto`
 
-Planning is allowed only while the batch is `Assigned`. For material-requiring workshops, the server checks the assigned Lead's inventory by normalized `materialName + unit`, deducts the planned quantities only after the plan succeeds, and records `BatchPlanAllocation` stock transactions. If stock is missing or insufficient, the plan is rejected and no workshop plan is created.
+Planning is allowed only while the batch is `Assigned`. `requiresMaterials` is decided per request item and becomes `BatchWorkshop.RequiresMaterials`; `Workshop.RequiresMaterials` is legacy/default metadata and does not block planning. For `requiresMaterials = true`, material delivery date, material items, and `estimatedMetersPerUnit > 0` are required. For `requiresMaterials = false`, material delivery date and material items must be omitted/empty and `estimatedMetersPerUnit` must be `0`. For material-requiring batch workshops, the server checks the assigned Lead's inventory by normalized `materialName + unit`, deducts the planned quantities only after the plan succeeds, and records `BatchPlanAllocation` stock transactions. If stock is missing or insufficient, the plan is rejected and no workshop plan is created.
+
+### PUT `/api/batch/{id}/cancel` — Role: Admin
+**Response `data`:** `BatchDto`
+
+Cancels a batch only while it is still `Assigned`. Once Lead planning succeeds and the batch moves to `InProduction`, cancellation is rejected. Cancel does not restore inventory because successful planning is the first point where Lead inventory is deducted.
 
 ### GET `/api/batch/my` — Role: Lead
 **Response `data`:** `BatchListDto[]`
@@ -148,9 +153,12 @@ Planning is allowed only while the batch is `Assigned`. For material-requiring w
 | workshopId | int |
 | quantity | int |
 | isRework | bool |
+| reportedMaterialUsed | decimal? (required >0 when this batch workshop requires materials; omitted/0 otherwise) |
 | photos | IFormFile[] (≥1, allowed: `.jpg`, `.jpeg`, `.png`, `.webp`) |
 
-**Response `data`:** `WorkDto`
+**Response `data`:** `WorkDto` (`actualMaterialUsed`, `reportedMaterialUsed`, and `estimatedMaterialUsed` are included for material tracking)
+
+For material-requiring batch workshops, `reportedMaterialUsed` reserves the workshop's batch stock and cannot exceed `BatchWorkshop.MaterialRemaining`. `estimatedMaterialUsed` is still stored as the planned baseline (`quantity * estimatedMetersPerUnit`) but does not reserve stock.
 
 ### PUT `/api/work/approve` — Role: QCWorkshop
 **Request:**
@@ -158,6 +166,8 @@ Planning is allowed only while the batch is `Assigned`. For material-requiring w
 { "workId": int, "actualMaterialUsed": decimal, "notes": "string (optional, currently unused)" }
 ```
 **Response `data`:** `WorkDto`
+
+`actualMaterialUsed` is the QC-finalized usage. For material-requiring batch workshops, approving reconciles `MaterialUsed` by releasing the Staff-reported reserve and applying the actual value. The actual value cannot exceed the workshop stock available after releasing that reserve.
 
 ### PUT `/api/work/reject` — Role: QCWorkshop
 `multipart/form-data`
@@ -173,6 +183,7 @@ Planning is allowed only while the batch is `Assigned`. For material-requiring w
 | photos | IFormFile[] (optional) |
 
 `passedQuantity + repairableQuantity + unrepairableQuantity` must equal the submitted `Quantity`.
+For material-requiring batch workshops, rejecting reconciles material usage the same way as approval.
 
 **Response `data`:** `WorkDto`
 
@@ -252,7 +263,7 @@ Returns unconfirmed deliveries for the caller's workshop.
 **Response `data`:** `MaterialDeliveryDto`
 
 `actualQuantity` cannot exceed the item's `plannedQuantity`.
-If the workshop is the first in the batch chain and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
+If this planned batch workshop has `BatchWorkshop.RequiresMaterials = true` and any item was short, a `MaterialRequest` is auto-created; the batch flow itself is **not** blocked.
 If the delivery has an active Lead task delegation for QCTransport, QCWorkshop can confirm receipt only after QCTransport marks the delivery as `Delivered`.
 
 ---
@@ -324,7 +335,7 @@ Approval validates and deducts the requested quantities from the assigned Lead's
   ]
 }
 ```
-Allowed only for the first workshop in the chain whose `Workshop.RequiresMaterials = true`, while the batch is in `InProduction`, `UnderQCReview`, `ReadyForTransfer`, or `PendingLeadReview`. Blocked while a prior ad-hoc request is still `Pending` or `Approved`.
+Allowed for any workshop in the batch chain whose `BatchWorkshop.RequiresMaterials = true`, while the batch is in `InProduction`, `UnderQCReview`, `ReadyForTransfer`, or `PendingLeadReview`. `Workshop.RequiresMaterials` does not control ad-hoc eligibility. Blocked while a prior ad-hoc request is still `Pending` or `Approved` for the same batch workshop.
 
 **Response `data`:** `MaterialRequestDto`
 

@@ -91,14 +91,14 @@ Notification (*) ── (1) User
 | BatchId | int | FK → Batch |
 | WorkshopId | int | FK → Workshop |
 | OrderIndex | int | Server normalizes to 0-based sequential during planning |
-| RequiresMaterials | bool | If true, Staff cannot submit work until `MaterialsReceived = true` |
+| RequiresMaterials | bool | Per-batch plan decision. If true, Staff cannot submit work until `MaterialsReceived = true` |
 | MaterialsReceived | bool | Set true on material delivery confirmation |
 | IsCompleted | bool | Marked true when source's transfer is confirmed (or last workshop completes) |
 | StartDate | DateTime | Non-nullable |
 | EndDate | DateTime | Non-nullable |
 | InitialMaterialQty | decimal | Total delivered (initial delivery + fulfilled top-up requests); sum of `MaterialDeliveryItem.ActualQuantity` |
-| MaterialUsed | decimal | Pre-charged on submit (estimated), reconciled to actual on approve/reject |
-| EstimatedMetersPerUnit | decimal | Used for pre-charge calculation: `quantity * estimatedMetersPerUnit` |
+| MaterialUsed | decimal | Workshop batch stock already consumed/reserved. Staff-reported usage reserves stock on submit; QC actual usage reconciles it on approve/reject |
+| EstimatedMetersPerUnit | decimal | Used for baseline estimate calculation: `quantity * estimatedMetersPerUnit` |
 
 Unique index: `(BatchId, WorkshopId)`
 
@@ -107,7 +107,7 @@ Unique index: `(BatchId, WorkshopId)`
 |---|---|---|
 | Id | int | PK |
 | Name | string | |
-| RequiresMaterials | bool | Drives `BatchWorkshop.RequiresMaterials` default and ad-hoc request eligibility |
+| RequiresMaterials | bool | Legacy/default metadata only. Does not block batch planning, shortfall requests, or ad-hoc request eligibility |
 | Users | ICollection\<User\> | Nav |
 
 ### User
@@ -139,8 +139,9 @@ Unique index: `(BatchId, WorkshopId)`
 | UnrepairableQuantity | int | On reject only: items that cannot be repaired. Surfaced on `TransferRequestDto.QualityIssues` |
 | ReviewedByQCId | int? | FK → User (QCWorkshop) |
 | ReviewedAt | DateTime? | |
-| ActualMaterialUsed | decimal? | QC's measurement; replaces the pre-charged estimate on approve/reject |
-| EstimatedMaterialUsed | decimal? | Pre-charged at submit time: `quantity * BatchWorkshop.EstimatedMetersPerUnit` (only when workshop requires materials) |
+| ActualMaterialUsed | decimal? | QC's finalized measurement; replaces Staff-reported reserve on approve/reject |
+| ReportedMaterialUsed | decimal? | Staff-reported usage at submit time; reserves `BatchWorkshop.MaterialUsed` when the batch workshop requires materials |
+| EstimatedMaterialUsed | decimal? | Baseline estimate saved at submit time: `quantity * BatchWorkshop.EstimatedMetersPerUnit` (only when workshop requires materials) |
 | Photos | ICollection\<WorkPhoto\> | Nav |
 
 Constraint: on reject, `PassedQuantity + RepairableQuantity + UnrepairableQuantity` must equal `Quantity`.
@@ -260,8 +261,8 @@ Unique index: `(LeadId, NormalizedMaterialName, Unit)`. `stock-in` reuses this r
 **Round limit:** max 3 supplemental rounds (so up to 4 round numbers total including the original shortfall request). A 4th `ConfirmAsync` that is still short throws `BusinessRuleException`. Ad-hoc requests also count against this cap once they go through the same approve/confirm cycle.
 
 **Origin rules:**
-- Shortfall requests are auto-created by `MaterialDeliveryService.ConfirmDeliveryAsync` only when the delivery's workshop is the **first** in the batch chain (`OrderIndex == 0`).
-- Ad-hoc requests can be created only by the first workshop's QC.
+- Shortfall requests are auto-created by `MaterialDeliveryService.ConfirmDeliveryAsync` for any workshop in the batch chain with `BatchWorkshop.RequiresMaterials = true` when a delivery confirmation is short.
+- Ad-hoc requests can be created by the workshop's QC for any workshop in the batch chain with `BatchWorkshop.RequiresMaterials = true`.
 
 ### MaterialRequestItem
 | Property | Type | Notes |
@@ -325,7 +326,8 @@ Index: `(UserId, IsRead)` for query performance.
 ### BatchStatus
 ```csharp
 Created = 0, Assigned = 1, InProduction = 2, UnderQCReview = 3,
-ReadyForTransfer = 4, Completed = 5, PendingLeadReview = 6, PendingGateQC = 7
+ReadyForTransfer = 4, Completed = 5, PendingLeadReview = 6, PendingGateQC = 7,
+Cancelled = 8
 ```
 ⚠️ Values are persisted to the DB. Gap between 5 and 6 is intentional. Never renumber.
 

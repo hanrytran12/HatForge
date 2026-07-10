@@ -32,7 +32,9 @@ public class MaterialRequestService : IMaterialRequestService
             new[] { "Items", "Batch.AssignedToLead", "Workshop" })
             ?? throw new NotFoundException("Delivery not found");
 
-        if (!await IsFirstWorkshopInChainAsync(delivery.BatchId, delivery.WorkshopId))
+        var batchWorkshop = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
+            x => x.BatchId == delivery.BatchId && x.WorkshopId == delivery.WorkshopId);
+        if (batchWorkshop == null || !batchWorkshop.RequiresMaterials)
             return null;
 
         var shortfalls = delivery.Items
@@ -127,22 +129,18 @@ public class MaterialRequestService : IMaterialRequestService
             throw new BusinessRuleException(
                 $"Cannot create ad-hoc material request when batch is in {batch.Status} status");
 
-        var workshop = await _unitOfWork.Workshops.GetByIdAsync(dto.WorkshopId)
-            ?? throw new NotFoundException("Workshop not found");
-
-        if (!workshop.RequiresMaterials)
-            throw new BusinessRuleException(
-                "Cannot create material request for a workshop that does not require materials");
-
         var batchWorkshop = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
             x => x.BatchId == dto.BatchId && x.WorkshopId == dto.WorkshopId);
         if (batchWorkshop == null)
             throw new BusinessRuleException(
                 "Workshop is not part of this batch's production chain");
 
-        if (batchWorkshop.OrderIndex != 0)
+        if (!batchWorkshop.RequiresMaterials)
             throw new BusinessRuleException(
-                "Only the first workshop in the chain can create supplemental material requests");
+                "Cannot create material request for a workshop that does not require materials in this batch plan");
+
+        var workshop = await _unitOfWork.Workshops.GetByIdAsync(dto.WorkshopId)
+            ?? throw new NotFoundException("Workshop not found");
 
         var openAdHoc = await _unitOfWork.MaterialRequests.FirstOrDefaultAsync(
             x => x.BatchId == dto.BatchId
@@ -550,14 +548,6 @@ public class MaterialRequestService : IMaterialRequestService
             new[] { "Batch", "OriginalDelivery.Workshop", "Workshop", "Items", "CreatedByQC", "ApprovedByLead", "DeliveredByTransportQc", "FulfilledByQC" })
             ?? throw new NotFoundException("Material request not found");
         return MapToDtoValue(r);
-    }
-
-    private async Task<bool> IsFirstWorkshopInChainAsync(int batchId, int workshopId)
-    {
-        var batchWorkshop = await _unitOfWork.BatchWorkshops.FirstOrDefaultAsync(
-            x => x.BatchId == batchId && x.WorkshopId == workshopId);
-
-        return batchWorkshop?.OrderIndex == 0;
     }
 
     private static MaterialRequestDto MapToDtoValue(MaterialRequest r) => new(

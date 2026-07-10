@@ -133,5 +133,5 @@ public class AdminDashboardService : IAdminDashboardService
         request.CreatedAt);
 
     private static bool IsActiveBatch(Batch batch) =>
-        batch.Status is not (BatchStatus.Created or BatchStatus.Completed);
+        batch.Status is not (BatchStatus.Created or BatchStatus.Completed or BatchStatus.Cancelled);
 }

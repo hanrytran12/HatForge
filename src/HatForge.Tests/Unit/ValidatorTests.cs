@@ -68,12 +68,38 @@ public class ValidatorTests
     }
 
     [Fact]
+    public void PlanBatch_DoesNotRequireMaterials_WithMaterialFields_Invalid()
+    {
+        var v = new PlanBatchValidator();
+        var item = new WorkshopPlanItemDto(
+            1,
+            0,
+            false,
+            Start,
+            End,
+            Start,
+            new List<MaterialItemDto> { new("Wool Felt", 10) },
+            EstimatedMetersPerUnit: 1m);
+        var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
+        Assert.False(result.IsValid);
+    }
+
+    [Fact]
     public void PlanBatch_Valid_Passes()
     {
         var v = new PlanBatchValidator();
         var item = new WorkshopPlanItemDto(1, 0, true, Start, End, Start.AddDays(-1),
             new List<MaterialItemDto> { new("Wool Felt", 500) },
             EstimatedMetersPerUnit: 2m);
+        var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
+        result.ShouldNotHaveAnyValidationErrors();
+    }
+
+    [Fact]
+    public void PlanBatch_NoMaterials_Valid_Passes()
+    {
+        var v = new PlanBatchValidator();
+        var item = new WorkshopPlanItemDto(1, 0, false, Start, End, null, null);
         var result = v.TestValidate(new PlanBatchDto(new List<WorkshopPlanItemDto> { item }));
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -92,6 +118,14 @@ public class ValidatorTests
         var v = new SubmitWorkValidator();
         var result = v.TestValidate(new SubmitWorkDto(1, 1, 5, false, new List<string>()));
         result.ShouldHaveValidationErrorFor(x => x.PhotoUrls);
+    }
+
+    [Fact]
+    public void SubmitWork_NegativeReportedMaterialUsed_Invalid()
+    {
+        var v = new SubmitWorkValidator();
+        var result = v.TestValidate(new SubmitWorkDto(1, 1, 5, false, new List<string> { "/p.jpg" }, ReportedMaterialUsed: -1m));
+        result.ShouldHaveValidationErrorFor(x => x.ReportedMaterialUsed);
     }
 
     [Fact]

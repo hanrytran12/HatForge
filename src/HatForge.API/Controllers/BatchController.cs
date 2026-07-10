@@ -24,6 +24,11 @@ public class BatchController : BaseApiController
     public async Task<ActionResult<ApiResponse<BatchDto>>> Plan(int id, [FromBody] PlanBatchDto dto)
         => Success(await _batchService.PlanBatchAsync(id, dto, CurrentUserId));
 
+    [HttpPut("{id:int}/cancel")]
+    [Authorize(Roles = nameof(UserRole.Admin))]
+    public async Task<ActionResult<ApiResponse<BatchDto>>> Cancel(int id)
+        => Success(await _batchService.CancelBatchAsync(id));
+
     [HttpGet("my")]
     [Authorize(Roles = nameof(UserRole.Lead))]
     public async Task<ActionResult<ApiResponse<IReadOnlyList<BatchListDto>>>> GetMyBatches()

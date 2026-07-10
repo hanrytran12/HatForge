@@ -85,6 +85,7 @@ public class AppDbContext : DbContext
         {
             e.Property(x => x.RejectionNotes).HasMaxLength(500);
             e.Property(x => x.ActualMaterialUsed).HasPrecision(18, 2);
+            e.Property(x => x.ReportedMaterialUsed).HasPrecision(18, 2);
             e.Property(x => x.EstimatedMaterialUsed).HasPrecision(18, 4);
             e.HasOne(x => x.Batch)
                 .WithMany(x => x.Works)

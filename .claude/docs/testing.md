@@ -24,20 +24,20 @@ src/HatForge.Tests/
 ├── Unit/
 │   ├── AdminDashboardServiceTests.cs — 1 test
 │   ├── AuthServiceTests.cs          — 1 test
-│   ├── BatchServiceTests.cs         — 12 tests
+│   ├── BatchServiceTests.cs         — 16 tests
 │   ├── HatModelServiceTests.cs      — 6 tests
 │   ├── LeadInventoryServiceTests.cs — 4 tests
 │   ├── LeadTaskDelegationServiceTests.cs — 16 tests
 │   ├── MaterialRequestServiceTests.cs — 29 tests
 │   ├── TransferServiceTests.cs      — 14 tests
 │   ├── UserServiceTests.cs          — 6 tests
-│   ├── ValidatorTests.cs            — 15 tests
-│   └── WorkServiceTests.cs          — 24 tests
+│   ├── ValidatorTests.cs            — 18 tests
+│   └── WorkServiceTests.cs          — 30 tests
 └── Integration/
     └── BatchWorkflowTests.cs        — 3 end-to-end tests
 ```
 
-Total: 131 tests (`[Fact]` / `[Theory]` count).
+Total: 144 tests (`[Fact]` / `[Theory]` count).
 
 ---
 
@@ -69,7 +69,7 @@ This prevents state bleed between tests. Never share a context instance across t
 | `Workshop(id, requiresMaterials)` | Workshop entity |
 | `HatModel(id)` | HatModel entity |
 | `LeadStock(...)` / `SeedLeadStockAsync(...)` | Lead central material stock for inventory allocation tests |
-| `SeedBaseAsync(ctx)` | Seeds 1 Lead + 1 Staff + 1 QC + 1 Admin, 3 Workshops (workshop 3 requires materials), 1 HatModel |
+| `SeedBaseAsync(ctx)` | Seeds 1 Lead + 1 Staff + 1 QC + 1 Admin, 3 Workshops, 1 HatModel. Workshop material flags are legacy/default metadata in current business rules |
 
 Always call `SeedBaseAsync(ctx)` (or equivalent inserts) followed by `await ctx.SaveChangesAsync()` before instantiating services.
 
@@ -89,11 +89,16 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 - Create batch — generates correct `BatchNumber` format
 - BatchNumber sequence increments correctly within same day
 - Create batch with end-before-start → throws `BusinessRuleException`
-- Plan batch with workshops and materials
+- Plan batch with workshops and materials, including non-first/legacy-non-material workshops when the batch plan sets `RequiresMaterials = true`
 - Plan batch deducts assigned material from Lead inventory and writes stock ledger rows
 - Plan batch with insufficient Lead inventory rejects and leaves no plan behind
 - Plan batch with wrong lead → throws `ForbiddenException`
 - Plan batch with `RequiresMaterials` but no delivery date → throws `BusinessRuleException`
+- Plan batch with `RequiresMaterials = false` for a legacy-material workshop succeeds without delivery or stock deduction
+- Plan batch with `RequiresMaterials = false` but material fields present → throws `BusinessRuleException`
+- Cancel batch while `Assigned` → status becomes `Cancelled`
+- Cancel after successful planning → throws `BusinessRuleException`
+- Plan a cancelled batch → throws `BusinessRuleException`
 - Create batch with invalid lead ID → throws `NotFoundException`
 
 ### AuthServiceTests
@@ -134,17 +139,21 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 - Submit work — first workshop, happy path (staff only, no materials gate)
 - Submit work — non-Staff caller → `ForbiddenException`
 - Submit work — `RequiresMaterials` but not received → `BusinessRuleException`
-- Submit work — pre-charges `EstimatedMaterialUsed` against `MaterialUsed`
-- Submit work — insufficient estimated material → `BusinessRuleException` with rounded-meters message
-- Reject work — does not refund pre-charged estimate; reconciliation lands at `ActualMaterialUsed`
+- Submit work — material workshops require `ReportedMaterialUsed`; non-material workshops reject positive reported usage
+- Submit work — reserves Staff-reported usage against `MaterialUsed` while retaining `EstimatedMaterialUsed` as baseline
+- Submit work — insufficient reported material → `BusinessRuleException` with rounded-meters message
+- Reject work — reconciliation releases reported usage and lands at `ActualMaterialUsed`
 - Reject work — material low/out triggers `MaterialLowAlert` with delivered-material summary
-- Approve work — reconciles estimate to `ActualMaterialUsed`
+- Approve/reject work — rejects actual usage that would exceed available workshop stock after releasing the reported reserve
+- Approve work — reconciles reported usage to `ActualMaterialUsed`
 - Approve work — material low → alert with delivered-material summary
 - Reject work — QC quantity breakdown (`Passed + Repairable + Unrepairable = Quantity`) allows repairable-only resubmission; rework submissions don't consume `ReceivedUsableQuantity`
 - Reject work — quantities don't sum to `Quantity` → throws
 - Submit work — second workshop without transferred status → throws
 - Submit work — second workshop with transferred → succeeds; receipt usable cap enforced
 - Submit work — exceeding `ReceivedUsableQuantity` after cumulative non-rework submissions → throws
+- Submit work — cancelled batch → throws
+- Submit work — rework with materials requires and reserves reported usage
 - Approve work / reject work — happy path
 - Approve already-approved → throws
 
@@ -167,7 +176,7 @@ Inject instead of `SignalRNotificationPublisher` in all unit and integration tes
 Shortfall flow (auto from delivery confirmation):
 - Single-item short → creates `MaterialRequest` with one item, status `Pending`
 - All items exact → no request created
-- Shortfall on a non-first workshop → no request created
+- Shortfall on a non-first workshop with `BatchWorkshop.RequiresMaterials = true` → request created
 - Oversupply during delivery confirmation is rejected when actual quantity exceeds planned quantity
 - `ApproveAsync` — assigned lead → validates/deducts Lead inventory, writes ledger, and sets `Approved`
 - `ApproveAsync` — wrong lead → `ForbiddenException`
@@ -181,19 +190,19 @@ Shortfall flow (auto from delivery confirmation):
 - Batch flow unblocked by shortfall (delivery confirmation still flips `MaterialsReceived = true`)
 
 Ad-hoc flow:
-- QC of first materials-requiring workshop creates request with `IsAdHoc = true`, `Round = 1`
-- Non-first workshop → throws
+- QC of a planned material-requiring workshop creates request with `IsAdHoc = true`, `Round = 1`
+- Non-first planned material-requiring workshop → succeeds
 - Wrong-workshop QC → `ForbiddenException`
 - Non-QC staff → `ForbiddenException`
 - Batch status `Completed` → throws
-- Workshop without `RequiresMaterials` → throws
+- Batch workshop without `RequiresMaterials` → throws
 - Workshop not in chain → throws
 - Open `Pending` or `Approved` ad-hoc blocks new ones
 - After fulfillment, a new ad-hoc is allowed
 - Full ad-hoc lifecycle (create → approve → confirm) completes
 
 ### ValidatorTests
-FluentValidation rules: `CreateBatchRequest`, `PlanBatchRequest`, `SubmitWorkRequest`, `RejectWorkRequest`, `CreateTransferRequest`, `ConfirmReceiptRequest` (negative quantities, valid case with notes).
+FluentValidation rules: `CreateBatchRequest`, `PlanBatchRequest`, `SubmitWorkRequest`, `RejectWorkRequest`, `CreateTransferRequest`, `ConfirmReceiptRequest` (negative quantities including reported material usage, valid case with notes, and material fields rejected when `RequiresMaterials = false`).
 
 ---
 

@@ -82,6 +82,7 @@ Services receive these values as method parameters — they do not access `IHttp
 |---|---|
 | `POST /api/batch` | Admin |
 | `PUT /api/batch/{id}/plan` | Lead |
+| `PUT /api/batch/{id}/cancel` | Admin |
 | `GET /api/batch/my` | Lead |
 | `GET /api/batch/pending-gate-qc` | QCGate |
 | `GET /api/batch` (all) | Any authenticated |
@@ -180,7 +181,7 @@ Passwords are hashed with BCrypt (BCrypt.Net-Next). Plaintext is never stored or
 | transport@hatforge.com | QCTransport | — | `Transport123!` |
 | gate@hatforge.com | QCGate | — | `Gate123!` |
 
-Seeded workshops: `Cutting` (RequiresMaterials=true), `Sewing` (false), `Finishing` (false).
+Seeded workshops: `Cutting`, `Sewing`, `Finishing`. Their `RequiresMaterials` values are legacy/default metadata only; Lead decides material requirements per batch plan.
 
 ---
 

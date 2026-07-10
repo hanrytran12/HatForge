@@ -20,7 +20,7 @@ evidence, QC quantity breakdowns, material budgeting, and push notifications at 
 - **Receipt inspection** — destination QC records usable vs. defective counts and inspection notes; non-rework submissions downstream are capped by received-usable quantity
 - **Lead material inventory** — Lead owns a central raw-material stock, can stock in or adjust on-hand quantities, and every allocation is ledgered
 - **Material delivery + top-up workflow** — scheduled deliveries with actual quantities, auto-spawned shortfall requests (max 3 supplemental rounds), QC-initiated ad-hoc requests
-- **Material budgeting** — pre-charged estimate per submission, reconciled to QC-measured actual, low-stock alerts at 5m remaining
+- **Material budgeting** — Staff-reported usage reserves workshop batch stock, QC-measured actual reconciles it, low-stock alerts at 5m remaining
 - **Admin-approved Lead delegation** to QCTransport for material delivery, supplemental fulfillment, transfer approval, and final review
 - **Real-time push notifications** via SignalR (`/hubs/notifications`) plus a persisted in-app notification feed
 - **Role-based access control** across 6 roles: Admin, Lead, Staff, QCWorkshop, QCGate, QCTransport
@@ -104,7 +104,7 @@ dotnet test
 | transport@hatforge.com | `Transport123!` | QC Transport | — |
 | gate@hatforge.com | `Gate123!` | QC Gate | — |
 
-Workshops: `Cutting` (requires materials), `Sewing`, `Finishing`.
+Workshops: `Cutting`, `Sewing`, `Finishing`. The seeded `Workshop.RequiresMaterials` flag is legacy/default metadata only; Lead decides material requirements per workshop while planning each batch.
 
 ## API Surface
 
@@ -119,6 +119,7 @@ All responses use the envelope `{ success, data, error, errors }`.
 | `GET /api/user`, `POST /api/user`, `DELETE /api/user/{id}` | Admin |
 | `POST /api/batch` | Admin |
 | `PUT /api/batch/{id}/plan` | Lead |
+| `PUT /api/batch/{id}/cancel` | Admin |
 | `GET /api/batch/my`, `GET /api/batch/pending-gate-qc`, `GET /api/batch`, `GET /api/batch/{id}`, `GET /api/batch/{id}/final-summary` | role-specific |
 | `PUT /api/batch/{id}/workshops/{workshopId}/complete` | QCGate, Lead |
 | `PUT /api/batch/{id}/lead-approve` | Lead |
@@ -143,13 +144,12 @@ Full request/response shapes: see [`.claude/docs/api_endpoints.md`](.claude/docs
 
 1. **Lead inventory setup** — Lead stocks raw materials into a central inventory. `stock-in` adds quantity;
    `adjust` sets the actual on-hand quantity for corrections/audits.
-2. **Batch creation → planning** — Admin creates a batch, Lead plans the workshop chain. Material-requiring
-   workshops validate stock availability and deduct their planned material from Lead inventory when planning succeeds.
-3. **Material delivery** — Receiving QC confirms actual quantities; if the workshop is first in chain
+2. **Batch creation -> planning** — Admin creates a batch, Lead plans the workshop chain. `requiresMaterials`
+   is decided per batch workshop. Material-requiring workshops validate stock availability and deduct their planned material from Lead inventory when planning succeeds.
+3. **Material delivery** — Receiving QC confirms actual quantities; if that batch workshop requires materials
    and items were short, a top-up request is auto-created.
-4. **Work submission** — Staff uploads photos and a quantity. Material is pre-charged
-   (`quantity * EstimatedMetersPerUnit`).
-5. **QC review** — QC approves (records `actualMaterialUsed`, reconciles the estimate) or rejects with a
+4. **Work submission** — Staff uploads photos, quantity, and reported material usage when the batch workshop requires materials. The reported usage reserves workshop batch stock.
+5. **QC review** — QC approves (records `actualMaterialUsed`, reconciles Staff-reported usage) or rejects with a
    `passed / repairable / unrepairable` breakdown.
 6. **Transfer** — QC of the source workshop creates a transfer; the server picks the next workshop by
    `OrderIndex`. Lead approves. Destination QC confirms receipt with usable + defective counts

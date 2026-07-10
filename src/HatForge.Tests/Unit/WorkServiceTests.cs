@@ -16,12 +16,13 @@ public class WorkServiceTests
         bool materialsReceived = false,
         decimal initialMaterialQty = 0m,
         decimal materialUsed = 0m,
-        decimal estimatedMetersPerUnit = 0m)
+        decimal estimatedMetersPerUnit = 0m,
+        BatchStatus status = BatchStatus.InProduction)
     {
         var batch = new Batch
         {
             BatchNumber = "B-100", HatModelId = 1, TargetQuantity = 100,
-            Status = BatchStatus.InProduction, AssignedToLeadId = 1,
+            Status = status, AssignedToLeadId = 1,
             StartDate = DateTime.UtcNow, EndDate = DateTime.UtcNow.AddDays(30)
         };
         ctx.Batches.Add(batch);
@@ -101,6 +102,20 @@ public class WorkServiceTests
     }
 
     [Fact]
+    public async Task SubmitWork_CancelledBatch_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx, status: BatchStatus.Cancelled);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(
+                new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }),
+                staffId: 2));
+    }
+
+    [Fact]
     public async Task SubmitWork_NonStaff_Throws()
     {
         using var ctx = TestDataFactory.CreateContext();
@@ -158,7 +173,40 @@ public class WorkServiceTests
     }
 
     [Fact]
-    public async Task SubmitWork_WithMaterials_DeductsEstimatedUsageImmediately()
+    public async Task SubmitWork_WithMaterials_RequiresReportedMaterialUsage()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2.5m);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(
+                new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }),
+                staffId: 2));
+    }
+
+    [Fact]
+    public async Task SubmitWork_WithoutMaterials_WithReportedUsage_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(ctx);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.SubmitWorkAsync(
+                new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 1m),
+                staffId: 2));
+    }
+
+    [Fact]
+    public async Task SubmitWork_WithMaterials_ReservesReportedUsageAndKeepsEstimate()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -172,15 +220,16 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var result = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 20m), staffId: 2);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
-        Assert.Equal(25m, bw.MaterialUsed);
+        Assert.Equal(20m, bw.MaterialUsed);
+        Assert.Equal(20m, result.ReportedMaterialUsed);
         Assert.Equal(25m, result.EstimatedMaterialUsed);
     }
 
     [Fact]
-    public async Task SubmitWork_WithInsufficientEstimatedMaterials_Throws()
+    public async Task SubmitWork_WithInsufficientReportedMaterials_Throws()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -194,11 +243,13 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         await Assert.ThrowsAsync<BusinessRuleException>(() =>
-            service.SubmitWorkAsync(new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2));
+            service.SubmitWorkAsync(
+                new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 21m),
+                staffId: 2));
     }
 
     [Fact]
-    public async Task RejectWork_WithMaterials_DoesNotRefundEstimatedUsage()
+    public async Task RejectWork_WithMaterials_ReconcilesReportedToHigherActualUsage()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -212,7 +263,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 15m), staffId: 2);
         await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0, 10, 0, 20m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
@@ -220,7 +271,7 @@ public class WorkServiceTests
     }
 
     [Fact]
-    public async Task RejectWork_WithMaterials_ReconcilesEstimateToActualUsage()
+    public async Task RejectWork_WithMaterials_ReconcilesReportedToLowerActualUsage()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -234,12 +285,13 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 18m), staffId: 2);
         var result = await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Loose stitching", 0, 10, 0, 12m, new List<string>()), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(12m, bw.MaterialUsed);
         Assert.Equal(12m, result.ActualMaterialUsed);
+        Assert.Equal(18m, result.ReportedMaterialUsed);
         Assert.Equal(10, result.RepairableQuantity);
     }
 
@@ -293,7 +345,7 @@ public class WorkServiceTests
     }
 
     [Fact]
-    public async Task ApproveWork_WithMaterials_ReconcilesEstimateToActualUsage()
+    public async Task ApproveWork_WithMaterials_ReconcilesReportedToActualUsage()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -307,11 +359,53 @@ public class WorkServiceTests
         var service = new WorkService(uow, new NoOpNotificationPublisher());
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 10m), staffId: 2);
         await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 15m, null), qcId: 3);
 
         var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
         Assert.Equal(15m, bw.MaterialUsed);
+    }
+
+    [Fact]
+    public async Task ApproveWork_WithMaterials_ActualUsageExceedsAvailableAfterReportedReserve_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2m);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 80m),
+            staffId: 2);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 101m, null), qcId: 3));
+    }
+
+    [Fact]
+    public async Task RejectWork_WithMaterials_ActualUsageExceedsAvailableAfterReportedReserve_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 2m);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 80m),
+            staffId: 2);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.RejectWorkAsync(new RejectWorkDto(work.Id, "Overuse", 0, 10, 0, 101m, new List<string>()), qcId: 3));
     }
 
     [Fact]
@@ -351,7 +445,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, notifications);
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 7, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 7, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 7m), staffId: 2);
         await service.ApproveWorkAsync(new ApproveWorkDto(work.Id, 7m, null), qcId: 3);
 
         var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
@@ -398,7 +492,7 @@ public class WorkServiceTests
         var service = new WorkService(uow, notifications);
 
         var work = await service.SubmitWorkAsync(
-            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }), staffId: 2);
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 10m), staffId: 2);
         await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Sai màu vải", 0, 0, 10, 10m, new List<string>()), qcId: 3);
 
         var payload = Assert.IsType<MaterialLowAlertPayload>(notifications.LastMaterialLowAlertPayload);
@@ -518,6 +612,34 @@ public class WorkServiceTests
 
         Assert.True(rework.IsRework);
         Assert.Equal(10, rework.Quantity);
+    }
+
+    [Fact]
+    public async Task SubmitWork_Rework_WithMaterials_RequiresAndReservesReportedUsage()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var batchId = await SeedBatchWithWorkshopAsync(
+            ctx,
+            requiresMaterials: true,
+            materialsReceived: true,
+            initialMaterialQty: 100m,
+            estimatedMetersPerUnit: 1m);
+        var service = new WorkService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var work = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, false, new List<string> { "/uploads/p.jpg" }, ReportedMaterialUsed: 10m),
+            staffId: 2);
+        await service.RejectWorkAsync(new RejectWorkDto(work.Id, "Need repair", 0, 10, 0, 10m, new List<string>()), qcId: 3);
+
+        var rework = await service.SubmitWorkAsync(
+            new SubmitWorkDto(batchId, 1, 10, true, new List<string> { "/uploads/rework.jpg" }, ReportedMaterialUsed: 5m),
+            staffId: 2);
+
+        var bw = ctx.BatchWorkshops.Single(x => x.BatchId == batchId && x.WorkshopId == 1);
+        Assert.True(rework.IsRework);
+        Assert.Equal(5m, rework.ReportedMaterialUsed);
+        Assert.Equal(15m, bw.MaterialUsed);
     }
 
     [Fact]

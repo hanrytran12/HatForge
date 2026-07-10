@@ -144,6 +144,7 @@ ReadyForTransfer  = 4
 Completed         = 5        ← gap: 6 and 7 were added later
 PendingLeadReview = 6
 PendingGateQC     = 7
+Cancelled         = 8
 ```
 
 ---
@@ -156,8 +157,8 @@ Constants live in `Application/Common/MaterialTracking.cs`:
 LowMaterialThresholdMeters = 5m
 ```
 
-`WorkService` reconciles `BatchWorkshop.MaterialUsed` against the QC-measured `ActualMaterialUsed` after every approve/reject, and emits a `MaterialLowAlert` (via `INotificationPublisher`) when the remaining budget drops to or below the threshold.
+`WorkService` reserves workshop batch stock from Staff-provided `ReportedMaterialUsed` on submit, keeps `EstimatedMaterialUsed` as the planning baseline, then reconciles `BatchWorkshop.MaterialUsed` against QC-measured `ActualMaterialUsed` after every approve/reject. It emits a `MaterialLowAlert` (via `INotificationPublisher`) when the remaining budget drops to or below the threshold.
 
 `LeadInventoryService` owns the Lead's central raw-material stock. `stock-in` adds to inventory, `adjust` sets a counted on-hand quantity, and every stock movement creates a `LeadMaterialStockTransaction` ledger row.
 
-`BatchService.PlanBatchAsync` validates and deducts planned material from Lead inventory when the batch plan succeeds. `MaterialRequestService.ApproveAsync` validates and deducts supplemental/ad-hoc material when Lead approves a request. Shortfall and ad-hoc top-up requests are managed by `MaterialRequestService`. Maximum 3 supplemental rounds (`MaxSupplementalRounds = 3`); a fourth still-short confirmation throws `BusinessRuleException`.
+`BatchService.PlanBatchAsync` treats each plan item's `requiresMaterials` flag as the source of truth for `BatchWorkshop.RequiresMaterials`; `Workshop.RequiresMaterials` is legacy/default metadata only. It validates and deducts planned material from Lead inventory when the batch plan succeeds. `MaterialRequestService.ApproveAsync` validates and deducts supplemental/ad-hoc material when Lead approves a request. Shortfall and ad-hoc top-up requests are managed by `MaterialRequestService` for any planned material-requiring batch workshop. Maximum 3 supplemental rounds (`MaxSupplementalRounds = 3`); a fourth still-short confirmation throws `BusinessRuleException`.

@@ -20,10 +20,17 @@ public record WorkDto(
     int? ReviewedByQCId,
     DateTime? ReviewedAt,
     decimal? ActualMaterialUsed,
+    decimal? ReportedMaterialUsed,
     decimal? EstimatedMaterialUsed
 );
 
-public record SubmitWorkDto(int BatchId, int WorkshopId, int Quantity, bool IsRework, List<string> PhotoUrls);
+public record SubmitWorkDto(
+    int BatchId,
+    int WorkshopId,
+    int Quantity,
+    bool IsRework,
+    List<string> PhotoUrls,
+    decimal? ReportedMaterialUsed = null);
 
 public record ApproveWorkDto(int WorkId, decimal ActualMaterialUsed, string? Notes);
 

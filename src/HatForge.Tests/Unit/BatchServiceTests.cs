@@ -83,7 +83,7 @@ public class BatchServiceTests
         var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
         {
             NoMaterial(1, 0, Start, Start.AddDays(10)),
-            WithMaterial(3, 1, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
+            WithMaterial(2, 1, Start.AddDays(11), Start.AddDays(20), Start.AddDays(10))
         });
 
         var result = await service.PlanBatchAsync(batch.Id, plan, leadId: 1);
@@ -164,7 +164,7 @@ public class BatchServiceTests
     }
 
     [Fact]
-    public async Task PlanBatch_WhenMaterialRequirementDoesNotMatchWorkshop_Throws()
+    public async Task PlanBatch_WhenLegacyMaterialWorkshopPlannedWithoutMaterials_Succeeds()
     {
         using var ctx = TestDataFactory.CreateContext();
         await TestDataFactory.SeedBaseAsync(ctx);
@@ -177,8 +177,85 @@ public class BatchServiceTests
             NoMaterial(3, 0, Start, End)
         });
 
+        var result = await service.PlanBatchAsync(batch.Id, plan, leadId: 1);
+
+        Assert.Equal(nameof(BatchStatus.InProduction), result.Status);
+        Assert.False(result.Workshops.Single().RequiresMaterials);
+        Assert.Empty(ctx.MaterialDeliveries.Where(x => x.BatchId == batch.Id));
+        Assert.Empty(ctx.LeadMaterialStockTransactions);
+    }
+
+    [Fact]
+    public async Task PlanBatch_WithoutMaterialsButMaterialFieldsProvided_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var uow = TestDataFactory.CreateUnitOfWork(ctx);
+        var service = new BatchService(uow, new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        var plan = new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            new(
+                1,
+                0,
+                false,
+                Start,
+                End,
+                Start,
+                new List<MaterialItemDto> { new("Wool Felt", 1) },
+                EstimatedMetersPerUnit: 1m)
+        });
+
         await Assert.ThrowsAsync<BusinessRuleException>(
             () => service.PlanBatchAsync(batch.Id, plan, leadId: 1));
+    }
+
+    [Fact]
+    public async Task CancelBatch_WhenAssigned_SetsCancelled()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+
+        var result = await service.CancelBatchAsync(batch.Id);
+
+        Assert.Equal(nameof(BatchStatus.Cancelled), result.Status);
+    }
+
+    [Fact]
+    public async Task CancelBatch_AfterPlanning_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        await service.PlanBatchAsync(batch.Id, new PlanBatchDto(new List<WorkshopPlanItemDto>
+        {
+            NoMaterial(1, 0, Start, End)
+        }), leadId: 1);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() => service.CancelBatchAsync(batch.Id));
+    }
+
+    [Fact]
+    public async Task PlanBatch_WhenCancelled_Throws()
+    {
+        using var ctx = TestDataFactory.CreateContext();
+        await TestDataFactory.SeedBaseAsync(ctx);
+        var service = new BatchService(TestDataFactory.CreateUnitOfWork(ctx), new NoOpNotificationPublisher());
+
+        var batch = await service.CreateBatchAsync(new CreateBatchDto(1, 100, Start, End, 1));
+        await service.CancelBatchAsync(batch.Id);
+
+        await Assert.ThrowsAsync<BusinessRuleException>(() =>
+            service.PlanBatchAsync(batch.Id, new PlanBatchDto(new List<WorkshopPlanItemDto>
+            {
+                NoMaterial(1, 0, Start, End)
+            }), leadId: 1));
     }
 
     [Fact]
